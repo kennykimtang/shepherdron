@@ -1,5 +1,12 @@
-ultralytics>=8.0.0
+# 비전 코어
+ultralytics>=8.3.0
 opencv-python>=4.8.0
 numpy>=1.24.0
-python-dotenv>=1.0.0
 pillow>=10.0.0
+python-dotenv>=1.0.0
+
+# ByteTrack 추적기의 헝가리안 매칭에 필요
+lap>=0.5.12
+
+# 개발/CI
+pytest>=8.0.0

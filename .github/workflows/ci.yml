@@ -1,40 +1,46 @@
-name: Shepherdron CI Pipeline
+name: Shepherdron CI
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: ["main", "develop"]
   pull_request:
-    branches: [ "main", "develop" ]
+    branches: ["main", "develop"]
 
 jobs:
   test:
-    name: Build & Run Unit Tests
+    name: Lint imports & run test suite
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install System Dependencies for OpenCV
+      - name: Install OpenCV system libs
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-glx libglib2.0-0
+          sudo apt-get install -y libgl1 libglib2.0-0
 
-      - name: Install Python Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Shepherdron Vision Unit Tests
-        run: |
-          python test_module.py
+      # 모델 가중치를 내려받지 않는 순수 로직 테스트. 수초 안에 끝난다.
+      - name: Run unit tests
+        run: pytest tests/ -v
 
-      - name: Verify Configuration & Imports
+      - name: Verify package imports
         run: |
-          python -c "import config; from vision import PersonDetector, DensityAnalyzer, StreamHandler; print('All core modules imported successfully!')"
+          python -c "
+          import config, vision
+          print('exports:', len(vision.__all__))
+          from vision import CrowdPipeline, GroundPlane, CameraModel, AlertDebouncer
+          print('core modules import OK')
+          "
+
+      - name: Verify CLI help renders
+        run: python main.py --help

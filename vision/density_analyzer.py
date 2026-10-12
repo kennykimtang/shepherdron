@@ -1,8 +1,28 @@
+"""그리드 밀집도 분석 — 원근 보정된 persons/m^2 를 산출한다.
+
+캘리브레이션(GroundPlane)이 주어지면 각 셀이 덮는 실제 지면 면적을 구해
+밀집도를 m^2 당 인원으로 환산한다. 캘리브레이션이 없으면 예전처럼
+셀당 인원수로 판정하되, 결과에 calibrated=False 를 표시해 두어
+"이 수치는 원근 보정이 안 된 값"임을 호출 측이 알 수 있게 한다.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Sequence, Tuple
+
 import cv2
 import numpy as np
-from dataclasses import dataclass, field
-from typing import List, Tuple, Dict, Optional
+
 from vision.detector import DetectionResult
+from vision.geometry import GroundPlane
+
+# 군중 밀집도 기준 (persons/m^2). G.K. Still 등 군중안전 문헌의 통용 구간.
+#   ~1.0  여유롭게 보행 가능
+#   ~2.0  보행 속도 저하, 접촉 시작
+#   ~4.0  자력 이동 곤란
+#   5.0+  군중 압착(crowd crush) 위험
+DEFAULT_DENSITY_WARN = 2.0
+DEFAULT_DENSITY_DANGER = 4.0
 
 
 @dataclass
@@ -14,11 +34,23 @@ class GridCell:
     x2: int
     y2: int
     count: int = 0
-    status: str = "EMPTY"  # "EMPTY", "NORMAL", "WARNING", "DANGER"
+    status: str = "EMPTY"                   # EMPTY / NORMAL / WARNING / DANGER / UNKNOWN
+    area_m2: Optional[float] = None         # 이 셀이 덮는 실제 지면 면적
+    density: Optional[float] = None         # persons / m^2
+    track_ids: List[int] = field(default_factory=list)
 
     @property
     def center(self) -> Tuple[int, int]:
         return (int((self.x1 + self.x2) / 2), int((self.y1 + self.y2) / 2))
+
+    @property
+    def corners(self) -> List[Tuple[float, float]]:
+        return [(self.x1, self.y1), (self.x2, self.y1), (self.x2, self.y2), (self.x1, self.y2)]
+
+    @property
+    def reliable(self) -> bool:
+        """면적을 신뢰할 수 있는가. 지평선 너머 셀은 False."""
+        return self.area_m2 is not None and self.area_m2 > 0
 
 
 @dataclass
@@ -29,12 +61,17 @@ class DensityAnalysisResult:
     is_overcrowded: bool = False
     alarm_reasons: List[str] = field(default_factory=list)
 
+    calibrated: bool = False                 # 지상 평면 캘리브레이션 적용 여부
+    peak_density: Optional[float] = None     # 최대 셀의 persons/m^2
+    target_point: Optional[Tuple[int, int]] = None   # 타겟 화면 좌표(발목 무게중심)
+
+    @property
+    def metric(self) -> str:
+        return "persons/m^2" if self.calibrated else "persons/cell"
+
 
 class DensityAnalyzer:
-    """
-    영상 프레임을 그리드로 분할하고, Foot-point 기반으로
-    각 영역의 인구 밀집도를 계산 및 과밀집 상태를 판정하는 분석기
-    """
+    """프레임을 그리드로 나누고 Foot-point 를 지면에 투영해 밀집도를 판정한다."""
 
     def __init__(
         self,
@@ -44,6 +81,10 @@ class DensityAnalyzer:
         danger_threshold: int = 5,
         total_threshold: int = 15,
         heatmap_alpha: float = 0.35,
+        ground_plane: Optional[GroundPlane] = None,
+        density_warn: float = DEFAULT_DENSITY_WARN,
+        density_danger: float = DEFAULT_DENSITY_DANGER,
+        min_cell_area_m2: float = 0.5,
     ):
         self.rows = grid_rows
         self.cols = grid_cols
@@ -52,70 +93,142 @@ class DensityAnalyzer:
         self.total_threshold = total_threshold
         self.heatmap_alpha = heatmap_alpha
 
-    def analyze(self, frame_shape: Tuple[int, int, int], detection: DetectionResult) -> DensityAnalysisResult:
-        """
-        검출 결과(발목 좌표)를 기반으로 그리드별 밀집도 집계 및 과밀집 판정
-        """
+        self.ground_plane = ground_plane
+        self.density_warn = density_warn
+        self.density_danger = density_danger
+        # 너무 작은 면적은 0으로 나누기에 가까워 밀집도가 폭주한다. 하한을 둔다.
+        self.min_cell_area_m2 = min_cell_area_m2
+
+        self._area_cache: Dict[Tuple[int, int, int, int], Optional[float]] = {}
+
+    # ─────────────────────── 캘리브레이션 ───────────────────────
+    def set_ground_plane(self, plane: Optional[GroundPlane]) -> None:
+        self.ground_plane = plane
+        self._area_cache.clear()
+
+    @property
+    def calibrated(self) -> bool:
+        return self.ground_plane is not None and self.ground_plane.is_calibrated()
+
+    def _cell_area(self, cell: GridCell, frame_shape: Tuple[int, ...]) -> Optional[float]:
+        if not self.calibrated:
+            return None
+        key = (cell.x1, cell.y1, cell.x2, cell.y2)
+        if key not in self._area_cache:
+            assert self.ground_plane is not None
+            self._area_cache[key] = self.ground_plane.polygon_area_m2(cell.corners)
+        return self._area_cache[key]
+
+    # ─────────────────────────── 분석 ───────────────────────────
+    def analyze(
+        self, frame_shape: Tuple[int, ...], detection: DetectionResult
+    ) -> DensityAnalysisResult:
         height, width = frame_shape[:2]
         cell_w = width / self.cols
         cell_h = height / self.rows
 
-        # 1. 그리드 셀 초기화
+        # 1. 그리드 생성
         grid: Dict[Tuple[int, int], GridCell] = {}
         for r in range(self.rows):
             for c in range(self.cols):
-                gx1 = int(c * cell_w)
-                gy1 = int(r * cell_h)
-                gx2 = int((c + 1) * cell_w) if c < self.cols - 1 else width
-                gy2 = int((r + 1) * cell_h) if r < self.rows - 1 else height
-                grid[(r, c)] = GridCell(row=r, col=c, x1=gx1, y1=gy1, x2=gx2, y2=gy2, count=0)
+                grid[(r, c)] = GridCell(
+                    row=r, col=c,
+                    x1=int(c * cell_w), y1=int(r * cell_h),
+                    x2=int((c + 1) * cell_w) if c < self.cols - 1 else width,
+                    y2=int((r + 1) * cell_h) if r < self.rows - 1 else height,
+                )
 
-        # 2. Foot-point 기반 셀 매핑
-        for foot_x, foot_y in detection.foot_points:
-            c = int(foot_x / cell_w)
-            r = int(foot_y / cell_h)
-            # 영상 경계 클리핑
-            c = max(0, min(self.cols - 1, c))
-            r = max(0, min(self.rows - 1, r))
+        # 2. Foot-point → 셀 매핑 (추적 ID 도 함께 모은다)
+        members: Dict[Tuple[int, int], List[Tuple[int, int]]] = {k: [] for k in grid}
+        ids = detection.track_ids or [None] * len(detection.foot_points)
+        for (fx, fy), tid in zip(detection.foot_points, ids):
+            c = max(0, min(self.cols - 1, int(fx / cell_w)))
+            r = max(0, min(self.rows - 1, int(fy / cell_h)))
             grid[(r, c)].count += 1
+            members[(r, c)].append((fx, fy))
+            if tid is not None:
+                grid[(r, c)].track_ids.append(int(tid))
 
-        # 3. 셀 상태 분류 및 최대 밀집 셀 탐색
-        cells_list = list(grid.values())
-        max_cell = None
-        max_count = -1
-        alarm_reasons = []
+        # 3. 면적·밀집도 산출 및 등급 판정
+        cells = list(grid.values())
+        alarm_reasons: List[str] = []
+        calibrated = self.calibrated
 
-        for cell in cells_list:
-            if cell.count >= self.danger_threshold:
-                cell.status = "DANGER"
-                alarm_reasons.append(f"Grid ({cell.row},{cell.col}) count: {cell.count} >= {self.danger_threshold}")
-            elif cell.count >= self.warn_threshold:
-                cell.status = "WARNING"
-            elif cell.count > 0:
-                cell.status = "NORMAL"
+        for cell in cells:
+            area = self._cell_area(cell, frame_shape)
+            cell.area_m2 = area
+            if area is not None and area >= self.min_cell_area_m2:
+                cell.density = cell.count / area
+
+            if calibrated and cell.density is not None:
+                if cell.density >= self.density_danger:
+                    cell.status = "DANGER"
+                    alarm_reasons.append(
+                        f"Grid ({cell.row},{cell.col}) {cell.density:.2f} p/m^2 "
+                        f">= {self.density_danger:.2f}"
+                    )
+                elif cell.density >= self.density_warn:
+                    cell.status = "WARNING"
+                elif cell.count > 0:
+                    cell.status = "NORMAL"
+                else:
+                    cell.status = "EMPTY"
+            elif calibrated and cell.count > 0:
+                # 캘리브레이션은 됐으나 이 셀은 지평선 너머 — 판정 보류
+                cell.status = "UNKNOWN"
             else:
-                cell.status = "EMPTY"
+                if cell.count >= self.danger_threshold:
+                    cell.status = "DANGER"
+                    alarm_reasons.append(
+                        f"Grid ({cell.row},{cell.col}) count {cell.count} "
+                        f">= {self.danger_threshold}"
+                    )
+                elif cell.count >= self.warn_threshold:
+                    cell.status = "WARNING"
+                elif cell.count > 0:
+                    cell.status = "NORMAL"
+                else:
+                    cell.status = "EMPTY"
 
-            if cell.count > max_count:
-                max_count = cell.count
-                max_cell = cell
+        # 4. 가장 혼잡한 셀 — 캘리브레이션 시 밀집도, 아니면 인원수 기준
+        def rank(c: GridCell) -> float:
+            if calibrated and c.density is not None:
+                return c.density
+            return float(c.count)
 
-        # 4. 전체 과밀집(Over-density) 여부 판정
-        is_overcrowded = False
+        populated = [c for c in cells if c.count > 0]
+        max_cell = max(populated, key=rank) if populated else None
+
+        # 5. 전체 과밀집 판정
+        is_over = any(c.status == "DANGER" for c in cells)
         if detection.count >= self.total_threshold:
-            is_overcrowded = True
-            alarm_reasons.append(f"Total count: {detection.count} >= {self.total_threshold}")
-        elif any(cell.status == "DANGER" for cell in cells_list):
-            is_overcrowded = True
+            is_over = True
+            alarm_reasons.append(
+                f"Total count {detection.count} >= {self.total_threshold}"
+            )
+
+        # 6. 타겟 좌표 — 셀 중심보다 실제 발목 무게중심이 정확하다
+        target = None
+        if max_cell is not None:
+            pts = members[(max_cell.row, max_cell.col)]
+            if pts:
+                target = (int(sum(p[0] for p in pts) / len(pts)),
+                          int(sum(p[1] for p in pts) / len(pts)))
+            else:
+                target = max_cell.center
 
         return DensityAnalysisResult(
             total_persons=detection.count,
-            grid_cells=cells_list,
+            grid_cells=cells,
             max_dense_cell=max_cell,
-            is_overcrowded=is_overcrowded,
+            is_overcrowded=is_over,
             alarm_reasons=alarm_reasons,
+            calibrated=calibrated,
+            peak_density=(max_cell.density if max_cell else None),
+            target_point=target,
         )
 
+    # ───────────────────────── 시각화 ─────────────────────────
     def draw_visualization(
         self,
         frame: np.ndarray,
@@ -126,111 +239,89 @@ class DensityAnalyzer:
         show_footpoints: bool = True,
         show_grid: bool = True,
         show_heatmap: bool = True,
+        alert_active: Optional[bool] = None,
+        smoothed_count: Optional[int] = None,
+        target_override: Optional[Tuple[int, int]] = None,
     ) -> np.ndarray:
-        """
-        분석 결과를 프레임 위에 오버레이 렌더링
-        """
-        vis_frame = frame.copy()
+        vis = frame.copy()
         overlay = frame.copy()
 
-        # 색상 맵 (BGR)
         color_map = {
             "EMPTY": (30, 30, 30),
-            "NORMAL": (0, 200, 0),      # 초록
-            "WARNING": (0, 165, 255),   # 주황
-            "DANGER": (0, 0, 255),      # 빨강
+            "NORMAL": (0, 200, 0),
+            "WARNING": (0, 165, 255),
+            "DANGER": (0, 0, 255),
+            "UNKNOWN": (120, 120, 120),
         }
 
-        # 1. 그리드 히트맵 및 경계선 그리기
         if show_heatmap or show_grid:
             for cell in analysis.grid_cells:
                 if show_heatmap and cell.count > 0:
-                    fill_color = color_map.get(cell.status, (0, 200, 0))
-                    cv2.rectangle(overlay, (cell.x1, cell.y1), (cell.x2, cell.y2), fill_color, -1)
-
+                    cv2.rectangle(overlay, (cell.x1, cell.y1), (cell.x2, cell.y2),
+                                  color_map.get(cell.status, (0, 200, 0)), -1)
                 if show_grid:
-                    border_color = (0, 0, 255) if cell.status == "DANGER" else (180, 180, 180)
-                    thickness = 2 if cell.status == "DANGER" else 1
-                    cv2.rectangle(vis_frame, (cell.x1, cell.y1), (cell.x2, cell.y2), border_color, thickness)
-
-                    # 셀 우측 상단 인원수 태그
-                    label = f"[{cell.row},{cell.col}]: {cell.count}"
-                    cv2.putText(
-                        vis_frame,
-                        label,
-                        (cell.x1 + 8, cell.y1 + 22),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.55,
-                        (255, 255, 255),
-                        2,
-                        cv2.LINE_AA,
-                    )
-                    cv2.putText(
-                        vis_frame,
-                        label,
-                        (cell.x1 + 8, cell.y1 + 22),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.55,
-                        (0, 0, 0),
-                        1,
-                        cv2.LINE_AA,
-                    )
-
+                    danger = cell.status == "DANGER"
+                    cv2.rectangle(vis, (cell.x1, cell.y1), (cell.x2, cell.y2),
+                                  (0, 0, 255) if danger else (180, 180, 180),
+                                  2 if danger else 1)
+                    if cell.density is not None:
+                        label = f"[{cell.row},{cell.col}] {cell.count}p  {cell.density:.1f}/m2"
+                    elif cell.status == "UNKNOWN":
+                        label = f"[{cell.row},{cell.col}] {cell.count}p  (no ground)"
+                    else:
+                        label = f"[{cell.row},{cell.col}] {cell.count}p"
+                    for col, th in (((255, 255, 255), 2), ((0, 0, 0), 1)):
+                        cv2.putText(vis, label, (cell.x1 + 8, cell.y1 + 22),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, th, cv2.LINE_AA)
             if show_heatmap:
-                cv2.addWeighted(overlay, self.heatmap_alpha, vis_frame, 1 - self.heatmap_alpha, 0, vis_frame)
+                cv2.addWeighted(overlay, self.heatmap_alpha, vis,
+                                1 - self.heatmap_alpha, 0, vis)
 
-        # 2. 바운딩 박스 그리기
         if show_boxes:
-            for (x1, y1, x2, y2), conf in zip(detection.boxes, detection.confidences):
-                cv2.rectangle(vis_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(
-                    vis_frame,
-                    f"P {conf:.2f}",
-                    (x1, max(20, y1 - 6)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.45,
-                    (0, 255, 0),
-                    1,
-                    cv2.LINE_AA,
-                )
+            ids = detection.track_ids or [None] * len(detection.boxes)
+            for (x1, y1, x2, y2), conf, tid in zip(detection.boxes,
+                                                   detection.confidences, ids):
+                cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                tag = f"#{tid} {conf:.2f}" if tid is not None else f"P {conf:.2f}"
+                cv2.putText(vis, tag, (x1, max(20, y1 - 6)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, cv2.LINE_AA)
 
-        # 3. Foot-point (발목 좌표) 그리기
         if show_footpoints:
-            for foot_x, foot_y in detection.foot_points:
-                cv2.circle(vis_frame, (foot_x, foot_y), 5, (0, 0, 255), -1)
-                cv2.circle(vis_frame, (foot_x, foot_y), 7, (255, 255, 255), 1)
+            for fx, fy in detection.foot_points:
+                cv2.circle(vis, (fx, fy), 5, (0, 0, 255), -1)
+                cv2.circle(vis, (fx, fy), 7, (255, 255, 255), 1)
 
-        # 4. 상단 대시보드 HUD 오버레이
-        h, w = vis_frame.shape[:2]
-        hud_h = 70
-        hud_bg = np.zeros((hud_h, w, 3), dtype=np.uint8)
-        hud_alpha = 0.6
-        vis_frame[0:hud_h, 0:w] = cv2.addWeighted(vis_frame[0:hud_h, 0:w], 1 - hud_alpha, hud_bg, hud_alpha, 0)
+        # ── HUD ──
+        h, w = vis.shape[:2]
+        hud_h = 92
+        hud = np.zeros((hud_h, w, 3), dtype=np.uint8)
+        vis[0:hud_h, 0:w] = cv2.addWeighted(vis[0:hud_h, 0:w], 0.4, hud, 0.6, 0)
 
-        # 텍스트 정보 출력
-        title_text = f"SHEPHERDRON VISION CORE | FPS: {fps:.1f}"
-        cv2.putText(vis_frame, title_text, (20, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 200, 200), 2, cv2.LINE_AA)
+        cal = "CALIBRATED" if analysis.calibrated else "UNCALIBRATED (raw counts)"
+        trk = "TRACKING" if detection.tracked else "DETECT-ONLY"
+        cv2.putText(vis, f"SHEPHERDRON VISION CORE | FPS {fps:.1f} | {trk} | {cal}",
+                    (20, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1, cv2.LINE_AA)
 
-        density_color = (0, 0, 255) if analysis.is_overcrowded else (0, 255, 0)
-        status_text = "OVER-DENSITY ALERT!" if analysis.is_overcrowded else "NORMAL DENSITY"
-        info_text = f"Total: {analysis.total_persons}  |  Status: {status_text}"
-        cv2.putText(vis_frame, info_text, (20, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.7, density_color, 2, cv2.LINE_AA)
+        active = analysis.is_overcrowded if alert_active is None else alert_active
+        col = (0, 0, 255) if active else (0, 255, 0)
+        state = "OVER-DENSITY ALERT" if active else "NORMAL DENSITY"
+        n = analysis.total_persons if smoothed_count is None else smoothed_count
+        peak = (f"  |  peak {analysis.peak_density:.1f} p/m2"
+                if analysis.peak_density is not None else "")
+        cv2.putText(vis, f"Total {n}{peak}  |  {state}", (20, 54),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.68, col, 2, cv2.LINE_AA)
 
-        # 과밀집 발생 시 타겟 셀 강조 표시
-        if analysis.is_overcrowded and analysis.max_dense_cell:
+        if alert_active is not None and alert_active != analysis.is_overcrowded:
+            cv2.putText(vis, "(debounced - raw frame disagrees)", (20, 80),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.46, (0, 200, 255), 1, cv2.LINE_AA)
+
+        tgt = target_override or analysis.target_point
+        if active and tgt is not None:
+            cx, cy = int(tgt[0]), int(tgt[1])
+            cv2.drawMarker(vis, (cx, cy), (0, 0, 255), cv2.MARKER_CROSS, 44, 2)
+            cv2.circle(vis, (cx, cy), 26, (0, 0, 255), 1)
             mc = analysis.max_dense_cell
-            # 타겟 셀에 조준선(Target Crosshair) 그리기
-            cx, cy = mc.center
-            cv2.drawMarker(vis_frame, (cx, cy), (0, 0, 255), cv2.MARKER_CROSS, 40, 2)
-            cv2.putText(
-                vis_frame,
-                f"TARGET CELL ({mc.row},{mc.col})",
-                (cx - 60, cy - 25),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                (0, 0, 255),
-                2,
-                cv2.LINE_AA,
-            )
-
-        return vis_frame
+            if mc is not None:
+                cv2.putText(vis, f"TARGET ({mc.row},{mc.col})", (cx - 62, cy - 34),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 0, 255), 2, cv2.LINE_AA)
+        return vis

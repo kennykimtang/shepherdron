@@ -1,0 +1,17 @@
+# 라즈베리파이 4 전용 추가 요구사항
+#
+# 설치 순서
+#   sudo apt install -y python3-picamera2 python3-libcamera
+#   python -m venv --system-site-packages .venv     # picamera2 는 apt 패키지를 써야 한다
+#   pip install -r requirements.txt -r requirements-pi.txt
+#   python scripts/export_ncnn.py --imgsz 320       # Pi 4 에서 3 FPS -> 8~10 FPS
+#
+# .env 설정
+#   STREAM_SOURCE=csi
+#   YOLO_MODEL=yolov8n_ncnn_model
+#   YOLO_IMGSZ=320
+#   YOLO_DEVICE=cpu
+
+ncnn>=1.0.20240410        # NCNN 런타임
+onnx>=1.16.0              # pt -> onnx -> ncnn 변환 경로
+onnxslim>=0.1.31

@@ -1,194 +1,223 @@
+"""Shepherdron 비전 실행기 — 군중 밀집도 분석 및 과밀집 타겟 산출."""
+from __future__ import annotations
+
 import argparse
-import time
 import os
-import cv2
+import time
 from datetime import datetime
+from pathlib import Path
+
+import cv2
+
 from config import VisionConfig
-from vision.detector import PersonDetector
+from vision.camera import open_source
 from vision.density_analyzer import DensityAnalyzer
-from vision.stream_handler import StreamHandler
+from vision.detector import PersonDetector
+from vision.geometry import CameraModel, GroundPlane
+from vision.pipeline import CrowdPipeline, PipelineResult
+from vision.stability import AlertDebouncer, RollingCounter, TargetSmoother
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Shepherdron Vision Crowd Density Analysis Module")
-    parser.add_argument(
-        "--source",
-        type=str,
-        default=None,
-        help="Video stream source: IP Webcam URL (e.g. http://192.168.0.10:8080/video) or webcam index (0, 1) or video file",
+    p = argparse.ArgumentParser(
+        description="Shepherdron vision crowd-density module",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--model", type=str, default=None, help="YOLO model path (default: yolov8n.pt)")
-    parser.add_argument("--conf", type=float, default=None, help="YOLO confidence threshold (default: 0.45)")
-    parser.add_argument("--grid-rows", type=int, default=None, help="Grid rows (default: 3)")
-    parser.add_argument("--grid-cols", type=int, default=None, help="Grid columns (default: 3)")
-    parser.add_argument("--danger", type=int, default=None, help="Per-grid cell danger threshold (default: 5)")
-    parser.add_argument("--total-danger", type=int, default=None, help="Total crowd danger threshold (default: 15)")
-    parser.add_argument("--headless", action="store_true", help="Run without cv2 GUI display window")
-    return parser.parse_args()
+    p.add_argument("--source", help='스트림 소스: IP Webcam URL / 웹캠 번호 / 파일 / "csi"')
+    p.add_argument("--model", help="YOLO 가중치 또는 NCNN 모델 디렉터리")
+    p.add_argument("--imgsz", type=int, help="추론 입력 크기 (Pi 4 는 320 권장)")
+    p.add_argument("--conf", type=float, help="confidence 임계값")
+    p.add_argument("--grid-rows", type=int)
+    p.add_argument("--grid-cols", type=int)
+    p.add_argument("--danger", type=int, help="셀당 위험 인원수 (미캘리브레이션 시)")
+    p.add_argument("--total-danger", type=int, help="전체 위험 인원수")
+    p.add_argument("--density-danger", type=float, help="위험 밀집도 persons/m^2 (캘리브레이션 시)")
+    p.add_argument("--calibration", help="지상 평면 JSON 경로")
+    p.add_argument("--altitude", type=float, help="AGL 고도(m). 주면 타겟을 미터 오프셋으로 환산")
+    p.add_argument("--pitch", type=float, help="카메라 하향각(도). 90 = 수직 하향")
+    p.add_argument("--no-tracking", action="store_true", help="ByteTrack 끄기 (프레임 단위 검출만)")
+    p.add_argument("--headless", action="store_true", help="GUI 창 없이 실행")
+    p.add_argument("--max-frames", type=int, help="이 프레임 수만큼만 처리하고 종료 (벤치마크용)")
+    p.add_argument("--loop", action="store_true", help="동영상 파일을 끝에서 되감아 반복")
+    return p.parse_args()
 
 
-def on_overcrowded_event(analysis, frame):
-    """
-    과밀집 감지 시 트리거되는 콜백 함수
-    (라즈베리파이/Pixhawk 환경에서는 이 시점에 MAVLink 드론 이동 명령 및 액추에이터 전개로 연계됨)
-    """
-    print("\n" + "=" * 60)
-    print(f"🚨 [ALERT] CROWD DENSITY OVER-LIMIT DETECTED at {datetime.now().strftime('%H:%M:%S')}")
-    print(f"   - Total Count: {analysis.total_persons} persons")
-    for reason in analysis.alarm_reasons:
-        print(f"   - Reason: {reason}")
-    if analysis.max_dense_cell:
-        mc = analysis.max_dense_cell
-        print(f"   - Peak Dense Area: Grid Cell ({mc.row}, {mc.col}) with {mc.count} persons")
-        print(f"   - Screen Center Coordinate: {mc.center}")
-        print("   - [DRONE ACTION] -> Calculating GPS target coordinate & readying guidance deployment...")
-    print("=" * 60 + "\n")
+def apply_overrides(cfg: VisionConfig, a) -> VisionConfig:
+    for arg, field in (
+        ("source", "stream_source"), ("model", "model_name"), ("imgsz", "imgsz"),
+        ("conf", "conf_threshold"), ("grid_rows", "grid_rows"), ("grid_cols", "grid_cols"),
+        ("danger", "grid_danger_threshold"), ("total_danger", "total_danger_threshold"),
+        ("density_danger", "density_danger"), ("calibration", "ground_plane_path"),
+        ("altitude", "altitude_m"), ("pitch", "camera_pitch_deg"),
+    ):
+        v = getattr(a, arg)
+        if v is not None:
+            setattr(cfg, field, v)
+    if a.no_tracking:
+        cfg.use_tracking = False
+    return cfg
 
 
-def main():
-    args = parse_args()
-    cfg = VisionConfig()
+def build_pipeline(cfg: VisionConfig) -> CrowdPipeline:
+    plane = None
+    path = Path(cfg.ground_plane_path)
+    if path.exists():
+        plane = GroundPlane.load(path)
+        print(f"  * Ground plane  : {path}  ({plane.label or 'no label'})")
+    else:
+        print(f"  * Ground plane  : 없음 — 원근 보정 없이 셀당 인원수로 판정합니다")
+        print(f"                    (python scripts/calibrate_ground.py 로 생성)")
 
-    # CLI 인자가 주어졌을 경우 config 값 덮어쓰기
-    if args.source:
-        cfg.stream_source = args.source
-    if args.model:
-        cfg.model_name = args.model
-    if args.conf is not None:
-        cfg.conf_threshold = args.conf
-    if args.grid_rows is not None:
-        cfg.grid_rows = args.grid_rows
-    if args.grid_cols is not None:
-        cfg.grid_cols = args.grid_cols
-    if args.danger is not None:
-        cfg.grid_danger_threshold = args.danger
-    if args.total_danger is not None:
-        cfg.total_danger_threshold = args.total_danger
-
-    print("=" * 65)
-    print("  🛰️  SHEPHERDRON: Vision Crowd Density Analysis System")
-    print("=" * 65)
-    print(f"  * Stream Source : {cfg.stream_source}")
-    print(f"  * YOLO Model    : {cfg.model_name} (conf={cfg.conf_threshold})")
-    print(f"  * Grid Setup    : {cfg.grid_rows} x {cfg.grid_cols}")
-    print(f"  * Cell Danger   : >= {cfg.grid_danger_threshold} persons")
-    print(f"  * Total Danger  : >= {cfg.total_danger_threshold} persons")
-    print("=" * 65)
-
-    # 1. 검출기 및 밀집도 분석기 초기화
     detector = PersonDetector(
-        model_name=cfg.model_name,
-        conf_threshold=cfg.conf_threshold,
-        iou_threshold=cfg.iou_threshold,
-        device=cfg.device,
+        model_name=cfg.model_name, conf_threshold=cfg.conf_threshold,
+        iou_threshold=cfg.iou_threshold, device=cfg.device,
+        imgsz=cfg.imgsz, tracker=cfg.tracker,
     )
-
     analyzer = DensityAnalyzer(
-        grid_rows=cfg.grid_rows,
-        grid_cols=cfg.grid_cols,
+        grid_rows=cfg.grid_rows, grid_cols=cfg.grid_cols,
         warn_threshold=cfg.grid_warning_threshold,
         danger_threshold=cfg.grid_danger_threshold,
         total_threshold=cfg.total_danger_threshold,
-        heatmap_alpha=cfg.heatmap_alpha,
+        heatmap_alpha=cfg.heatmap_alpha, ground_plane=plane,
+        density_warn=cfg.density_warn, density_danger=cfg.density_danger,
+    )
+    camera = CameraModel(
+        width=cfg.capture_width, height=cfg.capture_height,
+        hfov_deg=cfg.hfov_deg, vfov_deg=cfg.vfov_deg,
+        pitch_deg=cfg.camera_pitch_deg,
+    )
+    return CrowdPipeline(
+        detector=detector, analyzer=analyzer, camera=camera,
+        use_tracking=cfg.use_tracking,
+        debouncer=AlertDebouncer(window=cfg.alert_window, on_ratio=cfg.alert_on_ratio,
+                                 off_ratio=cfg.alert_off_ratio, min_on_s=cfg.alert_min_on_s),
+        counter=RollingCounter(window=cfg.count_window),
+        smoother=TargetSmoother(),
+        altitude_m=cfg.altitude_m or None,
     )
 
-    # 2. 비디오 스트림 시작
-    stream = StreamHandler(source=cfg.stream_source).start()
 
-    # 토글 상태
-    show_boxes = cfg.show_boxes
-    show_footpoints = cfg.show_footpoints
-    show_grid = cfg.show_grid
-    show_heatmap = cfg.show_heatmap
+def on_alert(result: PipelineResult) -> None:
+    """과밀집 경보 상승 에지. Phase 2 에서 이 지점이 MAVLink goto 호출로 바뀐다."""
+    a = result.analysis
+    print("\n" + "=" * 68)
+    print(f"🚨 OVER-DENSITY ALERT  {datetime.now():%H:%M:%S}")
+    print(f"   count          : {result.smoothed_count} (raw {a.total_persons})")
+    if a.peak_density is not None:
+        print(f"   peak density   : {a.peak_density:.2f} persons/m^2")
+    for r in a.alarm_reasons:
+        print(f"   reason         : {r}")
+    if a.max_dense_cell:
+        print(f"   busiest cell   : ({a.max_dense_cell.row}, {a.max_dense_cell.col})")
+    t = result.target
+    if t:
+        print(f"   target pixel   : {t.pixel}")
+        print(f"   bearing offset : yaw {t.yaw_offset_deg:+.1f}°  pitch {t.pitch_offset_deg:+.1f}°")
+        if t.has_ground_fix:
+            print(f"   ground offset  : forward {t.forward_m:+.1f} m, "
+                  f"right {t.right_m:+.1f} m  (AGL {t.altitude_m:.1f} m)")
+            print( "   [PHASE 2]      -> MAVLink GUIDED goto 로 전달 가능")
+        else:
+            print( "   ground offset  : 고도 미지정 — --altitude 를 주면 미터로 환산됩니다")
+    print("=" * 68 + "\n")
 
-    prev_time = time.time()
-    last_alert_time = 0.0
-    alert_cooldown = 3.0  # 알림 중복 출력 방지 쿨다운 (초)
 
-    window_name = "Shepherdron Crowd Vision Monitor"
+def main() -> int:
+    args = parse_args()
+    cfg = apply_overrides(VisionConfig(), args)
+
+    print("=" * 68)
+    print("  🛰️  SHEPHERDRON — Vision Crowd Density Core")
+    print("=" * 68)
+    print(f"  * Source        : {cfg.stream_source}")
+    print(f"  * Model         : {cfg.model_name}  (imgsz {cfg.imgsz}, conf {cfg.conf_threshold})")
+    print(f"  * Tracking      : {'ByteTrack' if cfg.use_tracking else 'OFF (detect only)'}")
+    print(f"  * Grid          : {cfg.grid_rows} x {cfg.grid_cols}")
+    print(f"  * Thresholds    : cell>={cfg.grid_danger_threshold}p  total>={cfg.total_danger_threshold}p"
+          f"  density>={cfg.density_danger} p/m^2")
+    print(f"  * Alert hyst.   : {cfg.alert_on_ratio:.0%} on / {cfg.alert_off_ratio:.0%} off"
+          f"  over {cfg.alert_window} frames, hold {cfg.alert_min_on_s:.0f}s")
+    pipeline = build_pipeline(cfg)
+    if cfg.altitude_m:
+        print(f"  * Altitude      : {cfg.altitude_m:.1f} m AGL, camera pitch {cfg.camera_pitch_deg:.0f}°")
+    print("=" * 68)
+
+    stream = open_source(cfg.stream_source, cfg.capture_width,
+                         cfg.capture_height, cfg.capture_fps)
+    if args.loop and hasattr(stream, "loop_files"):
+        stream.loop_files = True
+    stream.start()
+
+    idle_since = None
+
+    flags = dict(show_boxes=cfg.show_boxes, show_footpoints=cfg.show_footpoints,
+                 show_grid=cfg.show_grid, show_heatmap=cfg.show_heatmap)
+    window = "Shepherdron Crowd Vision Monitor"
     if not args.headless:
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-
-    print("\n[INFO] Starting vision analysis loop. Controls:")
-    print("  [q] Quit  |  [s] Save Frame  |  [g] Toggle Grid")
-    print("  [h] Toggle Heatmap  |  [b] Toggle Boxes  |  [f] Toggle Footpoints\n")
+        cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+        print("\n[keys] q quit | s save | g grid | h heatmap | b boxes | f footpoints | r reset\n")
 
     try:
         while True:
-            ret, frame = stream.read()
-            if not ret or frame is None:
-                # 프레임 수신 대기
+            if getattr(stream, "finished", False):
+                print("\n[info] source exhausted")
+                break
+
+            ok, frame = stream.read()
+            if not ok or frame is None:
+                now = time.monotonic()
+                idle_since = idle_since or now
+                if now - idle_since > 15.0:
+                    print("\n[info] no frames for 15 s - giving up on the source")
+                    break
                 time.sleep(0.03)
                 continue
+            idle_since = None
 
-            # FPS 연산
-            current_time = time.time()
-            fps = 1.0 / (current_time - prev_time) if (current_time - prev_time) > 0 else 0.0
-            prev_time = current_time
+            result = pipeline.process(frame)
+            if result.alert_rising_edge:
+                on_alert(result)
 
-            # 1. 인물 검출 (YOLOv8)
-            detection = detector.detect(frame)
+            if args.max_frames and result.frame_index + 1 >= args.max_frames:
+                print(f"\n[info] reached --max-frames {args.max_frames}")
+                break
 
-            # 2. 인구 밀집도 및 과밀집 분석
-            analysis = analyzer.analyze(frame.shape, detection)
+            if args.headless:
+                if result.frame_index % 15 == 0:
+                    state = "ALERT" if result.alert_active else "ok"
+                    dens = (f" {result.analysis.peak_density:.1f}p/m2"
+                            if result.analysis.peak_density is not None else "")
+                    print(f"\r[{state:5}] n={result.smoothed_count:3d}{dens} "
+                          f"fps={result.fps:4.1f}", end="", flush=True)
+                continue
 
-            # 3. 과밀집 이벤트 발생 시 트리거
-            if analysis.is_overcrowded:
-                if (current_time - last_alert_time) > alert_cooldown:
-                    on_overcrowded_event(analysis, frame)
-                    last_alert_time = current_time
-
-            # 4. 시각화 렌더링
-            vis_frame = analyzer.draw_visualization(
-                frame=frame,
-                detection=detection,
-                analysis=analysis,
-                fps=fps,
-                show_boxes=show_boxes,
-                show_footpoints=show_footpoints,
-                show_grid=show_grid,
-                show_heatmap=show_heatmap,
-            )
-
-            if not args.headless:
-                cv2.imshow(window_name, vis_frame)
-                key = cv2.waitKey(1) & 0xFF
-
-                if key == ord("q"):
-                    print("[INFO] Exit requested by user.")
-                    break
-                elif key == ord("s"):
-                    save_dir = "captures"
-                    os.makedirs(save_dir, exist_ok=True)
-                    fname = os.path.join(save_dir, f"capture_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg")
-                    cv2.imwrite(fname, vis_frame)
-                    print(f"📸 Saved screenshot: {fname}")
-                elif key == ord("g"):
-                    show_grid = not show_grid
-                    print(f"[TOGGLE] Grid display: {show_grid}")
-                elif key == ord("h"):
-                    show_heatmap = not show_heatmap
-                    print(f"[TOGGLE] Heatmap display: {show_heatmap}")
-                elif key == ord("b"):
-                    show_boxes = not show_boxes
-                    print(f"[TOGGLE] Boxes display: {show_boxes}")
-                elif key == ord("f"):
-                    show_footpoints = not show_footpoints
-                    print(f"[TOGGLE] Foot-points display: {show_footpoints}")
-            else:
-                # 헤드리스 모드: 콘솔에 간략 상태 주기적 출력
-                if int(current_time) % 2 == 0:
-                    status_str = "OVERCROWDED!" if analysis.is_overcrowded else "OK"
-                    print(f"\r[STATUS] Count: {analysis.total_persons} | Status: {status_str} | FPS: {fps:.1f}", end="")
+            cv2.imshow(window, pipeline.render(frame, result, **flags))
+            k = cv2.waitKey(1) & 0xFF
+            if k == ord("q"):
+                break
+            elif k == ord("s"):
+                os.makedirs("captures", exist_ok=True)
+                fn = f"captures/capture_{datetime.now():%Y%m%d_%H%M%S}.jpg"
+                cv2.imwrite(fn, pipeline.render(frame, result, **flags))
+                print(f"📸 saved {fn}")
+            elif k == ord("r"):
+                pipeline.reset()
+                print("[reset] tracker and temporal filters cleared")
+            elif k in (ord("g"), ord("h"), ord("b"), ord("f")):
+                key = {"g": "show_grid", "h": "show_heatmap",
+                       "b": "show_boxes", "f": "show_footpoints"}[chr(k)]
+                flags[key] = not flags[key]
+                print(f"[toggle] {key} = {flags[key]}")
 
     except KeyboardInterrupt:
-        print("\n[INFO] Interrupted by user.")
+        print("\n[info] interrupted")
     finally:
         stream.stop()
         if not args.headless:
             cv2.destroyAllWindows()
-        print("[INFO] Shepherdron vision module terminated safely.")
+        print("[info] shepherdron vision module terminated safely.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
