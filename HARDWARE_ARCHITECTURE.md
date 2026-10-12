@@ -6,7 +6,7 @@
 
 ## 📸 최종 시스템 결선도 (Verified System Wiring)
 
-![Shepherdron 3S 최종 배선도](/Users/kennytang/.gemini/antigravity-ide/brain/cecce597-c2b3-49ff-bac5-af87f4e90d17/shepherdron_final_3s_wiring_1791788068506.jpg)
+![Shepherdron 3S 4모터 최종 배선도](/Users/kennytang/.gemini/antigravity-ide/brain/cecce597-c2b3-49ff-bac5-af87f4e90d17/shepherdron_4motors_wiring_1791789823646.jpg)
 
 ---
 
