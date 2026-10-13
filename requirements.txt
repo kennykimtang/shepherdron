@@ -8,5 +8,8 @@ python-dotenv>=1.0.0
 # ByteTrack 추적기의 헝가리안 매칭에 필요
 lap>=0.5.12
 
+# 비행 제어 (Phase 2)
+pymavlink>=2.4.40
+
 # 개발/CI
 pytest>=8.0.0
