@@ -119,7 +119,8 @@ class CrowdPipeline:
 
         detection = (self.detector.track(frame) if self.use_tracking
                      else self.detector.detect(frame))
-        analysis = self.analyzer.analyze(frame.shape, detection)
+        analysis = self.analyzer.analyze(frame.shape, detection,
+                                         altitude_m=self.altitude_m)
 
         raw = analysis.is_overcrowded
         active = self.debouncer.update(raw, now=t)

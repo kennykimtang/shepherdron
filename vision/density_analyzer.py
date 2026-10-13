@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 
 from vision.detector import DetectionResult
-from vision.geometry import GroundPlane
+from vision.geometry import CameraModel, GroundPlane
 
 # 군중 밀집도 기준 (persons/m^2). G.K. Still 등 군중안전 문헌의 통용 구간.
 #   ~1.0  여유롭게 보행 가능
@@ -38,6 +38,8 @@ class GridCell:
     area_m2: Optional[float] = None         # 이 셀이 덮는 실제 지면 면적
     density: Optional[float] = None         # persons / m^2
     track_ids: List[int] = field(default_factory=list)
+    slant_range_m: Optional[float] = None   # 카메라에서 이 셀까지 직선 거리
+    in_detection_range: bool = True         # 사람을 볼 수 있는 거리인가
 
     @property
     def center(self) -> Tuple[int, int]:
@@ -85,6 +87,7 @@ class DensityAnalyzer:
         density_warn: float = DEFAULT_DENSITY_WARN,
         density_danger: float = DEFAULT_DENSITY_DANGER,
         min_cell_area_m2: float = 0.5,
+        camera: Optional[CameraModel] = None,
     ):
         self.rows = grid_rows
         self.cols = grid_cols
@@ -98,6 +101,12 @@ class DensityAnalyzer:
         self.density_danger = density_danger
         # 너무 작은 면적은 0으로 나누기에 가까워 밀집도가 폭주한다. 하한을 둔다.
         self.min_cell_area_m2 = min_cell_area_m2
+
+        # 카메라를 주면 셀마다 "거기까지 보이는가"를 판단한다.
+        # 비스듬히 보면 화면 위쪽 셀은 수십 미터 밖이라 사람이 몇 픽셀밖에 안 된다.
+        # 그 구역의 "검출 0명"은 "사람이 없다"가 아니라 "보이지 않는다"이므로,
+        # 밀집도 0(=안전)으로 보고하면 거짓 음성이 된다.
+        self.camera = camera
 
         self._area_cache: Dict[Tuple[int, int, int, int], Optional[float]] = {}
 
@@ -121,7 +130,10 @@ class DensityAnalyzer:
 
     # ─────────────────────────── 분석 ───────────────────────────
     def analyze(
-        self, frame_shape: Tuple[int, ...], detection: DetectionResult
+        self,
+        frame_shape: Tuple[int, ...],
+        detection: DetectionResult,
+        altitude_m: Optional[float] = None,
     ) -> DensityAnalysisResult:
         height, width = frame_shape[:2]
         cell_w = width / self.cols
@@ -154,11 +166,28 @@ class DensityAnalyzer:
         alarm_reasons: List[str] = []
         calibrated = self.calibrated
 
+        # 카메라와 고도를 알면 셀별 거리를 구해 검출 가능 범위를 판단한다
+        max_range = None
+        if self.camera is not None and altitude_m and altitude_m > 0:
+            if (self.camera.width, self.camera.height) != (width, height):
+                self.camera.width, self.camera.height = width, height
+            max_range = self.camera.max_detection_range_m()
+
         for cell in cells:
             area = self._cell_area(cell, frame_shape)
             cell.area_m2 = area
             if area is not None and area >= self.min_cell_area_m2:
                 cell.density = cell.count / area
+
+            if max_range is not None:
+                cell.slant_range_m = self.camera.slant_range_at(cell.center[1], altitude_m)
+                cell.in_detection_range = (cell.slant_range_m is not None
+                                           and cell.slant_range_m <= max_range)
+
+            # 보이지 않는 구역의 "0명"은 "안전"이 아니다. 판정을 보류한다.
+            if not cell.in_detection_range and cell.count == 0:
+                cell.status = "UNKNOWN"
+                continue
 
             if calibrated and cell.density is not None:
                 if cell.density >= self.density_danger:
@@ -264,7 +293,12 @@ class DensityAnalyzer:
                     cv2.rectangle(vis, (cell.x1, cell.y1), (cell.x2, cell.y2),
                                   (0, 0, 255) if danger else (180, 180, 180),
                                   2 if danger else 1)
-                    if cell.density is not None:
+                    if cell.status == "UNKNOWN" and not cell.in_detection_range:
+                        label = (f"[{cell.row},{cell.col}] too far "
+                                 f"({cell.slant_range_m:.0f}m)"
+                                 if cell.slant_range_m else
+                                 f"[{cell.row},{cell.col}] too far")
+                    elif cell.density is not None:
                         label = f"[{cell.row},{cell.col}] {cell.count}p  {cell.density:.1f}/m2"
                     elif cell.status == "UNKNOWN":
                         label = f"[{cell.row},{cell.col}] {cell.count}p  (no ground)"

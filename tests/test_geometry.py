@@ -104,3 +104,56 @@ class TestSyntheticPlane:
         fwd, right = cam.pixel_to_ground_offset(px, py, 12.0)
         assert via_plane[0] == pytest.approx(right, abs=1e-6)
         assert via_plane[1] == pytest.approx(fwd, abs=1e-6)
+
+
+class TestObliqueCameraDefaults:
+    """기본 카메라 각도는 45도(비스듬)다.
+
+    수직 하향(90도)은 두 가지가 깨진다.
+      1. 사람이 어깨너비(0.5m)만 보여 10m 고도에서 6.5px — 검출 불가
+      2. 발목 좌표(박스 하단 중앙)가 실제 지상 위치와 맞지 않는다
+    """
+
+    def test_default_is_oblique_not_nadir(self):
+        assert CameraModel(width=640, height=480).pitch_deg == 45.0
+
+    def test_oblique_sees_the_whole_person(self):
+        """비스듬히 보면 전신(1.7m), 수직이면 어깨너비(0.5m)만 보인다."""
+        oblique = CameraModel(width=640, height=480, pitch_deg=45.0)
+        nadir = CameraModel(width=640, height=480, pitch_deg=90.0)
+        assert oblique.apparent_px(14.1) > 3 * nadir.apparent_px(14.1)
+
+    def test_oblique_reaches_much_further(self):
+        oblique = CameraModel(width=640, height=480, pitch_deg=45.0)
+        nadir = CameraModel(width=640, height=480, pitch_deg=90.0)
+        assert oblique.max_detection_range_m() > 3 * nadir.max_detection_range_m()
+
+    def test_detection_range_scales_with_input_size(self):
+        small = CameraModel(width=320, height=240, pitch_deg=45.0)
+        big = CameraModel(width=640, height=480, pitch_deg=45.0)
+        assert big.max_detection_range_m() == pytest.approx(
+            2 * small.max_detection_range_m(), rel=1e-6)
+
+    def test_smaller_min_pixels_claims_more_range(self):
+        lenient = CameraModel(width=640, height=480, min_detect_px=6)
+        strict = CameraModel(width=640, height=480, min_detect_px=24)
+        assert lenient.max_detection_range_m() == pytest.approx(
+            4 * strict.max_detection_range_m(), rel=1e-6)
+
+    def test_top_of_frame_is_further_than_bottom(self):
+        cam = CameraModel(width=640, height=480, pitch_deg=45.0)
+        assert cam.slant_range_at(80, 10.0) > cam.slant_range_at(400, 10.0)
+
+    def test_slant_range_never_closer_than_the_altitude(self):
+        cam = CameraModel(width=640, height=480, pitch_deg=45.0)
+        for py in (0, 120, 240, 360, 479):
+            r = cam.slant_range_at(py, 10.0)
+            if r is not None:
+                assert r >= 10.0 - 1e-6
+
+    def test_above_horizon_has_no_range(self):
+        cam = CameraModel(width=640, height=480, pitch_deg=20.0)
+        assert cam.slant_range_at(0, 10.0) is None
+
+    def test_zero_altitude_has_no_range(self):
+        assert CameraModel(width=640, height=480).slant_range_at(240, 0.0) is None

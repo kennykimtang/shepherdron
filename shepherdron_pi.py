@@ -81,7 +81,7 @@ def main() -> int:
     bridge = VisionBridge(CameraModel(
         width=cfg.capture_width, height=cfg.capture_height,
         hfov_deg=cfg.hfov_deg, vfov_deg=cfg.vfov_deg,
-        pitch_deg=cfg.camera_pitch_deg))
+        pitch_deg=cfg.camera_pitch_deg, min_detect_px=cfg.min_detect_px))
 
     mission = GuidanceMission(
         ctl,
