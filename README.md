@@ -93,13 +93,20 @@ shepherdron/
 │   ├── mavlink_controller.py Pixhawk 연결, 모드 전환, 안전 가드
 │   ├── mission.py           유도 임무 상태기계
 │   └── sitl_demo.py         SITL 전 구간 실행기
+├── link/
+│   ├── protocol.py          VisionReport / TelemetryReport
+│   ├── udp.py               UDP 송수신, 신선도·순서 판별
+│   └── bridge.py            픽셀 보고 → 미터 타겟 (기체 고도 사용)
 ├── scripts/
+│   ├── stream_camera.py     기체 카메라 MJPEG 스트리밍
 │   ├── calibrate_ground.py  지상 평면 캘리브레이션 (클릭 4점)
 │   ├── export_ncnn.py       라즈베리파이용 NCNN 내보내기
 │   ├── run_sitl.sh          ArduPilot SITL 기동
 │   └── run_pi.sh            Pi 온보드 실행기
 ├── tests/                   pytest : 가중치 없이 로직 검증
-├── main.py                  실행기
+├── shepherdron_ground.py    지상국 : YOLO 전담
+├── shepherdron_pi.py        기체 에이전트 : 판단·구동 전담
+├── main.py                  단일 기기 실행기 (개발·튜닝용)
 └── config.py                설정 (.env 로 덮어쓰기)
 ```
 
