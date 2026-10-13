@@ -58,7 +58,8 @@ class VisionConfig:
     # ── 카메라 기하 (Camera Module 3 Wide 기본값) ────────────────
     hfov_deg: float = _f("HFOV_DEG", 102.0)
     vfov_deg: float = _f("VFOV_DEG", 67.0)
-    camera_pitch_deg: float = _f("CAMERA_PITCH_DEG", 90.0)   # 90 = 수직 하향
+    camera_pitch_deg: float = _f("CAMERA_PITCH_DEG", 45.0)   # 45 = 비스듬, 90 = 수직 하향
+    min_detect_px: int = _i("MIN_DETECT_PX", 12)              # 이보다 작은 사람은 검출 불가로 본다
     altitude_m: float = _f("ALTITUDE_M", 0.0)                # 0 = 미지정
 
     # ── 시간축 안정화 ───────────────────────────────────────────

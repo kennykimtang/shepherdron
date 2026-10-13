@@ -146,7 +146,13 @@ class CameraModel:
     height: int
     hfov_deg: float = 102.0        # Camera Module 3 Wide 수평 화각
     vfov_deg: float = 67.0         # 〃 수직 화각
-    pitch_deg: float = 90.0        # 수평선 기준 하향각. 90 = 완전 수직(나디르)
+    pitch_deg: float = 45.0        # 수평선 기준 하향각. 90 = 완전 수직(나디르)
+
+    # 사람으로 가정하는 치수. 비스듬히 보면 전신(약 1.7 m)이 보이지만
+    # 수직으로 내려다보면 어깨너비(약 0.5 m)만 보인다.
+    subject_height_m: float = 1.7
+    # YOLOv8 의 가장 작은 검출 헤드는 stride 8 이라 이보다 작으면 사실상 못 본다.
+    min_detect_px: int = 12
 
     @property
     def fx(self) -> float:
@@ -191,6 +197,36 @@ class CameraModel:
 
         t = altitude_m / dz
         return (float(t * dx), float(t * dy))
+
+    def apparent_px(self, slant_range_m: float) -> float:
+        """해당 거리에 선 사람이 화면에서 차지하는 픽셀 수."""
+        if slant_range_m <= 0:
+            return float("inf")
+        size = self.subject_height_m if self.pitch_deg < 75.0 else 0.5
+        return size * self.fx / slant_range_m
+
+    def max_detection_range_m(self) -> float:
+        """사람을 검출할 수 있는 최대 슬랜트 거리(m).
+
+        이보다 먼 구역에서 '검출 0명'은 '사람이 없다'가 아니라 '보이지 않는다'다.
+        안전 판정에서 둘을 구분하지 않으면 거짓 음성이 된다.
+        """
+        size = self.subject_height_m if self.pitch_deg < 75.0 else 0.5
+        return size * self.fx / self.min_detect_px
+
+    def slant_range_at(self, py: float, altitude_m: float) -> Optional[float]:
+        """화면 세로 위치 py 가 가리키는 지면까지의 직선 거리(m)."""
+        if altitude_m <= 0:
+            return None
+        cy = self.height / 2.0
+        y = (py - cy) / self.fy
+        th = math.radians(self.pitch_deg)
+        dz = math.sin(th) + y * math.cos(th)
+        if dz <= 1e-9:
+            return None                              # 지평선 위
+        dx = math.cos(th) - y * math.sin(th)
+        t = altitude_m / dz
+        return float(math.hypot(t * dx, altitude_m))
 
     def ground_footprint_m2(self, altitude_m: float) -> Optional[float]:
         """나디르 기준 화면 전체가 덮는 지면 면적(m^2). 참고용 개략치."""

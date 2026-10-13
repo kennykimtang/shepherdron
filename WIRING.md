@@ -20,7 +20,7 @@
 | `ESC1~4` | 35 A BLHeli_S | 2–4S · opto PWM 입력 |
 | `M1~M4` | 2212 920KV BLDC | DETAIL A 배치 참조 |
 | `PC1` | Raspberry Pi 4 Model B 2GB | 컴패니언 · YOLOv8n + MAVLink |
-| `CAM1` | Camera Module 3 Wide | IMX708 · 102° H / 120° D · CSI-2 |
+| `CAM1` | Camera Module 3 Wide | IMX708 · 102° H / 120° D · CSI-2 · **45° 하향 마운트** |
 | `U1` | UBEC 5 V / 5 A | 스위칭 강압 · 피크 3.15 A |
 | `U2` | MAX98357A | I2S class-D 앰프 · 3.3 V 로직 수용 |
 | `U3` | DMD-150 | H-브리지 · 6.5–40 V / 15 A · **5 V TTL 입력** |
@@ -173,7 +173,7 @@ MOT_BAT_VOLT_MIN  9.9    3S
 | W15 | U1 출력 | PC1 J8-2 / J8-6 | 5.0 V | 18 AWG | **인라인 3 A 퓨즈** |
 | W16 | U1 출력 | U4 Vcc, LED1 Vcc | 5.0 V | 18 AWG | LED1에 1000 µF |
 | W17 | 5 V 레일 | U2 Vin | 5.0 V | 22 AWG | |
-| W18 | CAM1 | PC1 CSI-2 | MIPI | 15p FPC 200 mm | ESC 전력선과 이격 |
+| W18 | CAM1 | PC1 CSI-2 | MIPI | 15p FPC 200 mm | ESC 전력선과 이격. **45° 하향 고정** |
 | W19 | PC1 J8-19 | U4 A1 | SPI0 MOSI | 22 AWG | 3.3 V in → 5 V out |
 | W20 | PC1 J8-33 | U4 A2 | PWM1 | 22 AWG | 액추에이터 속도 |
 | W21 | PC1 J8-31 | U4 A3 | DIR | 22 AWG | 전개 / 수축 |

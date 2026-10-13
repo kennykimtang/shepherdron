@@ -129,3 +129,62 @@ class TestTargeting:
         pts = [(80, 80)] + [(560, 400)] * 5
         r = a.analyze(SHAPE, detection(pts))
         assert (r.max_dense_cell.row, r.max_dense_cell.col) == (2, 2)
+
+
+class TestDetectionRange:
+    """멀어서 못 본 구역을 '안전'이라고 보고하면 안 된다.
+
+    비스듬한 카메라에서 화면 위쪽 셀은 수십 미터 밖이라 사람이 몇 픽셀밖에
+    안 된다. 면적은 정확히 계산되므로 '검출 0명'이 '밀집도 0 = 안전'으로
+    보고되는데, 이건 거짓 음성이다.
+    """
+
+    def _analyzer(self, px=320, **kw):
+        from vision.geometry import CameraModel
+        cam = CameraModel(width=px, height=int(px * 0.75), pitch_deg=45.0, **kw)
+        return DensityAnalyzer(grid_rows=3, grid_cols=3, camera=cam), cam
+
+    def test_far_empty_cell_is_unknown_not_empty(self):
+        a, cam = self._analyzer()
+        r = a.analyze((240, 320, 3), DetectionResult(), altitude_m=10.0)
+        top = next(c for c in r.grid_cells if (c.row, c.col) == (0, 1))
+        assert top.in_detection_range is False
+        assert top.status == "UNKNOWN", "보이지 않는 구역을 EMPTY 로 보고하면 안 된다"
+
+    def test_near_empty_cell_is_genuinely_empty(self):
+        a, _ = self._analyzer()
+        r = a.analyze((240, 320, 3), DetectionResult(), altitude_m=10.0)
+        bottom = next(c for c in r.grid_cells if (c.row, c.col) == (2, 1))
+        assert bottom.in_detection_range is True
+        assert bottom.status == "EMPTY"
+
+    def test_detections_in_a_far_cell_are_still_trusted(self):
+        """멀어도 실제로 보였다면 그 관측은 유효하다. 보류할 이유가 없다."""
+        a, _ = self._analyzer()
+        r = a.analyze((240, 320, 3), detection([(160, 20)] * 6), altitude_m=10.0)
+        top = next(c for c in r.grid_cells if (c.row, c.col) == (0, 1))
+        assert top.count == 6
+        assert top.status != "UNKNOWN"
+
+    def test_higher_resolution_extends_the_trusted_range(self):
+        a, _ = self._analyzer(px=640)
+        r = a.analyze((480, 640, 3), DetectionResult(), altitude_m=10.0)
+        top = next(c for c in r.grid_cells if (c.row, c.col) == (0, 1))
+        assert top.in_detection_range is True, "640px 면 상단 행도 검출 범위 안"
+
+    def test_without_altitude_nothing_is_flagged(self):
+        """고도를 모르면 거리를 모른다. 추측해서 구역을 버리지 않는다."""
+        a, _ = self._analyzer()
+        r = a.analyze((240, 320, 3), DetectionResult(), altitude_m=None)
+        assert all(c.in_detection_range for c in r.grid_cells)
+
+    def test_without_a_camera_nothing_is_flagged(self):
+        a = DensityAnalyzer(grid_rows=3, grid_cols=3)
+        r = a.analyze((240, 320, 3), DetectionResult(), altitude_m=10.0)
+        assert all(c.in_detection_range for c in r.grid_cells)
+
+    def test_cell_range_increases_toward_the_top_of_frame(self):
+        a, _ = self._analyzer()
+        r = a.analyze((240, 320, 3), DetectionResult(), altitude_m=10.0)
+        col = sorted((c for c in r.grid_cells if c.col == 1), key=lambda c: c.row)
+        assert col[0].slant_range_m > col[1].slant_range_m > col[2].slant_range_m

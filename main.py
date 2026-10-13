@@ -73,18 +73,19 @@ def build_pipeline(cfg: VisionConfig) -> CrowdPipeline:
         iou_threshold=cfg.iou_threshold, device=cfg.device,
         imgsz=cfg.imgsz, tracker=cfg.tracker,
     )
+    camera = CameraModel(
+        width=cfg.capture_width, height=cfg.capture_height,
+        hfov_deg=cfg.hfov_deg, vfov_deg=cfg.vfov_deg,
+        pitch_deg=cfg.camera_pitch_deg, min_detect_px=cfg.min_detect_px,
+    )
     analyzer = DensityAnalyzer(
+        camera=camera,
         grid_rows=cfg.grid_rows, grid_cols=cfg.grid_cols,
         warn_threshold=cfg.grid_warning_threshold,
         danger_threshold=cfg.grid_danger_threshold,
         total_threshold=cfg.total_danger_threshold,
         heatmap_alpha=cfg.heatmap_alpha, ground_plane=plane,
         density_warn=cfg.density_warn, density_danger=cfg.density_danger,
-    )
-    camera = CameraModel(
-        width=cfg.capture_width, height=cfg.capture_height,
-        hfov_deg=cfg.hfov_deg, vfov_deg=cfg.vfov_deg,
-        pitch_deg=cfg.camera_pitch_deg,
     )
     return CrowdPipeline(
         detector=detector, analyzer=analyzer, camera=camera,

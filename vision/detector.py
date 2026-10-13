@@ -85,7 +85,11 @@ class PersonDetector:
             x1, y1, x2, y2 = map(int, box)
             boxes.append((x1, y1, x2, y2))
             confidences.append(float(conf))
-            # 발목 좌표: 지상 접지점 추정에 쓰는 바운딩박스 하단 중앙
+            # 발목 좌표: 바운딩박스 하단 중앙.
+            # 이 정의는 **비스듬한 카메라**를 전제한다. 비스듬히 보면 박스 하단이
+            # 실제 발 위치지만, 수직으로 내려다보면 머리·어깨 실루엣의 아래쪽
+            # 가장자리여서 지상 위치가 한쪽으로 치우친다.
+            # CAMERA_PITCH_DEG 를 90 으로 두면 이 가정이 깨진다.
             foot_points.append((int((x1 + x2) / 2), y2))
             track_ids.append(int(ids[i]) if ids is not None else None)
 
