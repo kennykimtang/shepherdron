@@ -36,11 +36,15 @@ jobs:
       - name: Verify package imports
         run: |
           python -c "
-          import config, vision
-          print('exports:', len(vision.__all__))
+          import config, vision, flight
+          print('vision exports:', len(vision.__all__))
+          print('flight exports:', len(flight.__all__))
           from vision import CrowdPipeline, GroundPlane, CameraModel, AlertDebouncer
+          from flight import MavlinkController, GuidanceMission, target_from_body_offset
           print('core modules import OK')
           "
 
       - name: Verify CLI help renders
-        run: python main.py --help
+        run: |
+          python main.py --help
+          python -m flight.sitl_demo --help

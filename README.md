@@ -16,6 +16,7 @@
 | 📋 **[TASK_BOARD.md](TASK_BOARD.md)** | 파트별 작업 현황 (GitHub Issues/Projects와 연동) |
 | 🗺️ **[ROADMAP.md](ROADMAP.md)** | 4단계 마일스톤 및 간트 차트 |
 | 👁️ **[VISION.md](VISION.md)** | 비전 코어 — 파이프라인·캘리브레이션·Pi 배포 |
+| 🚁 **[FLIGHT.md](FLIGHT.md)** | 비행 제어 — 측지 변환·안전 가드·SITL |
 | 🔌 **[WIRING.md](WIRING.md)** | 결선 명세 — 배선표 23선·핀맵·조립 순서 |
 | 🔧 **[HARDWARE_SPEC.md](HARDWARE_SPEC.md)** | 부품 검증 — BOM·추력/전력 예산·검증 근거 |
 
@@ -56,7 +57,7 @@ pytest tests/ -v
  │  Camera 3 Wide ─ YOLOv8n+ByteTrack ─ 원근보정 밀집도 ─ 타겟   │
  └──────────────────────────────┬───────────────────────────────┘
                                 │  forward_m / right_m (기체 기준)
- ┌─ 비행 (Phase 2) ─────────────▼───────────────────────────────┐
+ ┌─ 비행 (Phase 2 · 코어 완료) ─────────────▼───────────────────────────────┐
  │  Raspberry Pi 4 ─ MAVLink2 ─ Pixhawk 2.4.8 ─ GUIDED goto     │
  └──────────────────────────────┬───────────────────────────────┘
                                 │  호버링 도달 신호
@@ -86,9 +87,15 @@ shepherdron/
 │   ├── pipeline.py          위 전부를 묶는 CrowdPipeline
 │   ├── camera.py            CSI(Picamera2) / USB / IP 스트림 백엔드
 │   └── stream_handler.py    저지연 멀티스레드 스트림 수신기
+├── flight/
+│   ├── geodesy.py           기체 기준 오프셋 ↔ 위경도, 반경 제한
+│   ├── mavlink_controller.py Pixhawk 연결, 모드 전환, 안전 가드
+│   ├── mission.py           유도 임무 상태기계
+│   └── sitl_demo.py         SITL 전 구간 실행기
 ├── scripts/
 │   ├── calibrate_ground.py  지상 평면 캘리브레이션 (클릭 4점)
 │   ├── export_ncnn.py       라즈베리파이용 NCNN 내보내기
+│   ├── run_sitl.sh          ArduPilot SITL 기동
 │   └── run_pi.sh            Pi 온보드 실행기
 ├── tests/                   pytest — 가중치 없이 로직 검증
 ├── main.py                  실행기
