@@ -15,6 +15,7 @@
 |---|---|
 | 📋 **[TASK_BOARD.md](TASK_BOARD.md)** | 파트별 작업 현황 (GitHub Issues/Projects와 연동) |
 | 🗺️ **[ROADMAP.md](ROADMAP.md)** | 4단계 마일스톤 및 간트 차트 |
+| 🏗️ **[ARCHITECTURE.md](ARCHITECTURE.md)** | 시스템 구조 — 지상/기체 역할 분담, 링크, 장애 동작 |
 | 👁️ **[VISION.md](VISION.md)** | 비전 코어 — 파이프라인·캘리브레이션·Pi 배포 |
 | 🚁 **[FLIGHT.md](FLIGHT.md)** | 비행 제어 — 측지 변환·안전 가드·SITL |
 | 🔌 **[WIRING.md](WIRING.md)** | 결선 명세 — 배선표 23선·핀맵·조립 순서 |
@@ -98,7 +99,13 @@ shepherdron/
 │   ├── run_sitl.sh          ArduPilot SITL 기동
 │   └── run_pi.sh            Pi 온보드 실행기
 ├── tests/                   pytest — 가중치 없이 로직 검증
-├── main.py                  실행기
+├── link/
+│   ├── protocol.py          VisionReport / TelemetryReport
+│   ├── udp.py               UDP 송수신, 신선도·순서 판별
+│   └── bridge.py            픽셀 보고 → 미터 타겟 (기체 고도 사용)
+├── shepherdron_ground.py    지상국 — YOLO 전담
+├── shepherdron_pi.py        기체 에이전트 — 판단·구동 전담
+├── main.py                  단일 기기 실행기 (개발·튜닝용)
 └── config.py                설정 (.env 로 덮어쓰기)
 ```
 
