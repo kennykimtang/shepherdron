@@ -110,6 +110,7 @@ def main() -> int:
             if now - last_print >= 2.0:
                 if telem:
                     print(f"\r[기체] {telem.mission_state:<11} {telem.mode:<8} "
+                          f"구조물 {telem.payload_state:<10} "
                           f"alt {telem.relative_alt_m or 0:5.1f}m  "
                           f"batt {telem.battery_pct or 0:3d}%  "
                           f"link {telem.vision_age_s or 0:.2f}s  "

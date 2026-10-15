@@ -3,10 +3,13 @@
 CrowdPipeline 이 내는 PipelineResult 를 받아 기체를 과밀집 지점으로 보내고,
 도달하면 전개 훅을 호출한 뒤 복귀시킨다.
 
-    IDLE ──경보 상승──> NAVIGATING ──도달──> HOVERING ──유지시간──> RETURNING
-      ^                     │                   │                      │
-      └─────────────────────┴───────────────────┴──────────────────────┘
+    IDLE ─경보─> NAVIGATING ─도달─> HOVERING ─유지시간─> RETRACTING ─접힘─> RETURNING
+      ^              │                 │                    │                 │
+      └──────────────┴─────────────────┴────────────────────┴─────────────────┘
                          실패/페일세이프 시 FAILSAFE
+
+**RETRACTING 은 생략할 수 없다.** 600 mm 구조물을 내린 채로 복귀하면 착륙
+자체가 안 된다. 접혔음을 확인하기 전에는 RTL 을 걸지 않는다.
 
 설계 원칙
   · 상태 전이는 전부 명시적이다. "아마 도착했겠지" 로 다음 단계로 넘어가지 않는다.
@@ -23,6 +26,7 @@ from typing import Callable, Optional
 
 from flight.geodesy import GeoPoint, distance_m, target_from_body_offset
 from flight.mavlink_controller import MavlinkController
+from hardware.payload import NullPayload, Payload, PayloadState
 
 log = logging.getLogger("shepherdron.mission")
 
@@ -31,6 +35,7 @@ class MissionState(str, Enum):
     IDLE = "IDLE"                 # 대기 — 경보를 기다린다
     NAVIGATING = "NAVIGATING"     # 과밀집 지점으로 이동 중
     HOVERING = "HOVERING"         # 도달, 안내 수행 중
+    RETRACTING = "RETRACTING"     # 구조물 접는 중 — 접히기 전에는 복귀하지 않는다
     RETURNING = "RETURNING"       # 복귀 중
     FAILSAFE = "FAILSAFE"         # 이상 — 더 이상 임무를 수행하지 않는다
 
@@ -45,6 +50,7 @@ class GuidanceConfig:
     retarget_min_interval_s: float = 2.0  # 재조준 명령 최소 간격
     mission_cooldown_s: float = 60.0      # 임무 종료 후 새 경보를 무시하는 시간
     min_battery_pct: int = 30             # 이 아래면 새 임무를 시작하지 않는다
+    retract_timeout_s: float = 25.0       # 이 안에 못 접으면 이상으로 본다
 
 
 @dataclass
@@ -62,12 +68,16 @@ class GuidanceMission:
         self,
         controller: MavlinkController,
         config: Optional[GuidanceConfig] = None,
+        payload: Optional[Payload] = None,
         on_arrived: Optional[Callable[["GuidanceMission"], None]] = None,
         on_complete: Optional[Callable[["GuidanceMission"], None]] = None,
         on_failsafe: Optional[Callable[["GuidanceMission", str], None]] = None,
     ):
         self.ctl = controller
         self.cfg = config or GuidanceConfig()
+        # 페이로드를 주지 않으면 "달려 있지 않은 기체"로 본다 — 기구부가
+        # 완성되기 전에도 비행 로직을 그대로 돌릴 수 있어야 한다.
+        self.payload: Payload = payload or NullPayload()
         self.on_arrived = on_arrived          # Phase 3: 액추에이터 전개 + LED/음성
         self.on_complete = on_complete
         self.on_failsafe = on_failsafe
@@ -95,9 +105,27 @@ class GuidanceMission:
     def _fail(self, now: float, reason: str) -> None:
         self._enter(MissionState.FAILSAFE, now, reason)
         log.error("failsafe: %s", reason)
+        # 접힘을 기다릴 여유는 없지만, 명령은 걸어 두는 편이 낫다
+        if not self.payload.is_stowed:
+            log.error("페이로드가 전개 상태다 — 수축 명령 후 RTL. "
+                      "착륙 전 운용자 확인 필요")
+            self._payload_retract(now)
         self.ctl.return_to_launch()
         if self.on_failsafe:
             self.on_failsafe(self, reason)
+
+    def _payload_call(self, action: str, now: float) -> None:
+        fn = getattr(self.payload, action)
+        try:
+            fn(now=now)
+        except TypeError:
+            fn()
+
+    def _payload_deploy(self, now: float) -> None:
+        self._payload_call("deploy", now)
+
+    def _payload_retract(self, now: float) -> None:
+        self._payload_call("retract", now)
 
     def elapsed(self, now: float) -> float:
         return 0.0 if self._entered_at is None else now - self._entered_at
@@ -112,6 +140,7 @@ class GuidanceMission:
     def update(self, result=None, now: Optional[float] = None) -> MissionState:
         """매 프레임 호출한다. result 는 CrowdPipeline.process() 의 반환값."""
         t = now if now is not None else time.monotonic()
+        self.payload.update(t)
 
         # 어느 상태에서든 링크와 배터리를 먼저 본다
         if self.state not in (MissionState.IDLE, MissionState.FAILSAFE):
@@ -127,6 +156,7 @@ class GuidanceMission:
             MissionState.IDLE: self._idle,
             MissionState.NAVIGATING: self._navigating,
             MissionState.HOVERING: self._hovering,
+            MissionState.RETRACTING: self._retracting,
             MissionState.RETURNING: self._returning,
             MissionState.FAILSAFE: lambda *_: None,
         }[self.state]
@@ -185,14 +215,32 @@ class GuidanceMission:
         if self.target is not None and self.ctl.has_arrived(
                 self.target, self.cfg.arrival_radius_m):
             self._enter(MissionState.HOVERING, t, "목표 도달")
+            self._payload_deploy(t)
             if self.on_arrived:
-                self.on_arrived(self)       # Phase 3 전개 훅
+                self.on_arrived(self)       # LED·음성 등 부가 동작
 
     def _hovering(self, result, t: float) -> None:
         if self.elapsed(t) < self.cfg.hover_duration_s:
             return
-        self._enter(MissionState.RETURNING, t, "안내 종료")
-        self.ctl.return_to_launch()
+        # 이미 접혀 있으면(페이로드 미장착 등) 한 단계를 건너뛴다
+        if self.payload.is_stowed:
+            self._enter(MissionState.RETURNING, t, "안내 종료")
+            self.ctl.return_to_launch()
+            return
+        self._enter(MissionState.RETRACTING, t, "안내 종료 — 구조물 수축")
+        self._payload_retract(t)
+
+    def _retracting(self, result, t: float) -> None:
+        """접힘을 확인하기 전에는 복귀하지 않는다."""
+        if self.payload.is_stowed:
+            self._enter(MissionState.RETURNING, t, "수축 완료")
+            self.ctl.return_to_launch()
+            return
+        if self.elapsed(t) > self.cfg.retract_timeout_s:
+            # 접히지 않으면 어디에 내려도 구조물이 파손되거나 기체가 전복된다.
+            # 그래도 공중에 머무는 것보다는 홈으로 보내는 편이 낫다.
+            self._fail(t, f"페이로드 수축 실패 ({self.payload.state.value}) "
+                          f"— 착륙 전 운용자 개입 필요")
 
     def _returning(self, result, t: float) -> None:
         # RTL 은 비행제어기가 수행한다. 착륙(disarm)을 확인하면 임무 종료.
