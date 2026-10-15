@@ -18,6 +18,7 @@ Shepherdron : 군중 밀집도 자율 안내 드론
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 시스템 구조 : 지상/기체 역할 분담, 링크, 장애 동작 |
 | [VISION.md](VISION.md) | 비전 코어 : 파이프라인·캘리브레이션·Pi 배포 |
 | [FLIGHT.md](FLIGHT.md) | 비행 제어 : 측지 변환·안전 가드·SITL |
+| [PAYLOAD.md](PAYLOAD.md) | 페이로드 : 전개/수축, 600mm 기구 선택지 |
 | [WIRING.md](WIRING.md) | 결선 명세 : 배선표 23선·핀맵·조립 순서 |
 | [HARDWARE_SPEC.md](HARDWARE_SPEC.md) | 부품 검증 : BOM·추력/전력 예산·검증 근거 |
 
@@ -88,6 +89,8 @@ shepherdron/
 │   ├── pipeline.py          위 전부를 묶는 CrowdPipeline
 │   ├── camera.py            CSI(Picamera2) / USB / IP 스트림 백엔드
 │   └── stream_handler.py    저지연 멀티스레드 스트림 수신기
+├── hardware/
+│   └── payload.py           전개 구조물 추상화 (기구 방식 무관)
 ├── flight/
 │   ├── geodesy.py           기체 기준 오프셋 ↔ 위경도, 반경 제한
 │   ├── mavlink_controller.py Pixhawk 연결, 모드 전환, 안전 가드

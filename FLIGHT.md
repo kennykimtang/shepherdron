@@ -48,11 +48,11 @@ flight/
 ### 상태기계
 
 ```
- IDLE ──경보 상승──> NAVIGATING ──도달──> HOVERING ──유지시간──> RETURNING
-   ^                     │                   │                      │
-   │                     │  재조준            │ on_arrived()          │ 착륙
-   │                     │  (군중 이동 시)     │ [Phase 3 전개]        │
-   └─────────────────────┴───────────────────┴──────────────────────┘
+ IDLE ─경보─> NAVIGATING ─도달─> HOVERING ─유지─> RETRACTING ─접힘─> RETURNING
+   ^              │               │                 │                 │
+   │         재조준 │          구조물 전개 │          접히기 전엔 │ 착륙
+   │     (군중 이동) │          + LED/음성 │           RTL 금지  │
+   └──────────────┴───────────────┴─────────────────┴─────────────────┘
                    링크 끊김 / 배터리 부족 → FAILSAFE → RTL
 ```
 
@@ -162,6 +162,7 @@ pytest tests/test_geodesy.py tests/test_mavlink_controller.py \
 
 - [ ] **[NAV-01]** SITL 설치 후 `flight.sitl_demo` 실제 완주 확인 ([#4](https://github.com/kennykimtang/shepherdron/issues/4))
 - [ ] **[NAV-02]** Pixhawk 실기 TELEM2 통신 및 921600 안정성 확인 ([#5](https://github.com/kennykimtang/shepherdron/issues/5))
+- [x] 전개 상태로 복귀하지 않도록 RETRACTING 상태 추가 ([PAYLOAD.md](PAYLOAD.md))
 - [ ] **[NAV-05]** 정밀 호버링 — 현재는 RTL에 의존, 위치 유지 정확도 측정 필요
 - [ ] 비전 파이프라인에 `pipeline.set_altitude()`로 기압계 고도를 주입하는 배선
 - [ ] 조종기 개입 감지 → `mission.abort()` 연동

@@ -127,6 +127,7 @@ class TelemetryReport(Message):
     heading_deg: Optional[float] = None
     battery_pct: Optional[int] = None
     satellites: int = 0
+    payload_state: str = "STOWED"              # 구조물 전개 여부 — 착륙 가부와 직결
     vision_age_s: Optional[float] = None       # Pi 가 본 링크 지연
     version: int = PROTOCOL_VERSION
 
