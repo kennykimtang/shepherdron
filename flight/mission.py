@@ -23,6 +23,7 @@ CrowdPipeline 이 내는 PipelineResult 를 받아 기체를 과밀집 지점으
 from __future__ import annotations
 
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -48,6 +49,9 @@ class MissionState(str, Enum):
 @dataclass
 class GuidanceConfig:
     cruise_altitude_m: float = 10.0       # 유도 비행 고도 (ROADMAP 완료 기준)
+    # GPS 가 없으면(실내) 위경도 대신 기수 기준 상대 이동으로 명령한다.
+    # 비전이 이미 기체 기준 오프셋을 내므로 변환 한 단계가 사라진다.
+    use_body_offset: bool = False
     arrival_radius_m: float = 2.0         # 이 안에 들면 도달로 본다
     hover_duration_s: float = 30.0        # 안내를 유지하는 시간
     navigation_timeout_s: float = 90.0    # 이 시간 안에 못 가면 포기하고 복귀
@@ -56,6 +60,18 @@ class GuidanceConfig:
     mission_cooldown_s: float = 60.0      # 임무 종료 후 새 경보를 무시하는 시간
     min_battery_pct: int = 30             # 이 아래면 새 임무를 시작하지 않는다
     retract_timeout_s: float = 25.0       # 이 안에 못 접으면 이상으로 본다
+
+
+@dataclass
+class _RelativeTarget:
+    """실내(무GPS)에서 발행한 상대 이동 명령. 절대 좌표가 없다."""
+
+    forward_m: float
+    right_m: float
+    issued_at: float
+
+    def __str__(self) -> str:
+        return f"(전방 {self.forward_m:+.1f} m, 우현 {self.right_m:+.1f} m)"
 
 
 @dataclass
@@ -178,7 +194,11 @@ class GuidanceMission:
 
     def status(self, now: Optional[float] = None) -> MissionStatus:
         t = now if now is not None else time.monotonic()
-        d = self.ctl.distance_to(self.target) if self.target else None
+        d = None
+        if isinstance(self.target, _RelativeTarget):
+            d = math.hypot(self.target.forward_m, self.target.right_m)
+        elif self.target is not None:
+            d = self.ctl.distance_to(self.target)
         return MissionStatus(self.state, self.target, d, self.elapsed(t),
                              self.reason, self.missions_completed)
 
@@ -217,15 +237,34 @@ class GuidanceMission:
         return self.state
 
     # ─────────────────────────── 각 상태 ───────────────────────────
+    def _issue_target(self, result, t: float):
+        """타겟을 비행제어기로 보낸다. 실패하면 None.
+
+        야외(GPS) : 기체 기준 오프셋 → 위경도 → goto()
+        실내(무GPS): 기체 기준 오프셋 → goto_body_offset()   ← 변환 없음
+        """
+        target = getattr(result, "target", None)
+        if target is None or not target.has_ground_fix:
+            log.warning("target rejected: 지상 오프셋 없음 (고도 미지정?)")
+            return None
+
+        if self.cfg.use_body_offset:
+            sent = self.ctl.goto_body_offset(target.forward_m, target.right_m)
+            if sent is None:
+                return None
+            # 실내에서는 절대 좌표가 없으므로 "얼마나 가야 하는가"로 추적한다
+            return _RelativeTarget(forward_m=sent[0], right_m=sent[1], issued_at=t)
+
+        point = self._resolve_target(result)
+        if point is None:
+            return None
+        return self.ctl.goto(point)
+
     def _idle(self, result, t: float) -> None:
         if result is None or not result.alert_rising_edge:
             return
         if t < self._cooldown_until:
             log.info("alert ignored: cooldown %.0f s remaining", self._cooldown_until - t)
-            return
-
-        target = self._resolve_target(result)
-        if target is None:
             return
 
         problems = self.ctl.preflight_check(now=t)
@@ -236,9 +275,9 @@ class GuidanceMission:
             log.error("alert ignored: could not enter GUIDED")
             return
 
-        sent = self.ctl.goto(target)
+        sent = self._issue_target(result, t)
         if sent is None:
-            log.error("alert ignored: goto refused")
+            log.error("alert ignored: 타겟을 보내지 못했습니다")
             return
 
         self.target = sent
@@ -252,25 +291,46 @@ class GuidanceMission:
             return
 
         # 군중이 움직였으면 재조준한다 (명령 폭주는 최소 간격으로 막는다)
-        if result is not None and result.alert_active:
-            new_target = self._resolve_target(result)
-            if (new_target is not None and self.target is not None
-                    and self._last_goto_at is not None
-                    and t - self._last_goto_at >= self.cfg.retarget_min_interval_s
-                    and distance_m(self.target, new_target) >= self.cfg.retarget_distance_m):
-                sent = self.ctl.goto(new_target)
-                if sent is not None:
-                    log.info("retargeting: crowd moved %.1f m",
-                             distance_m(self.target, sent))
-                    self.target = sent
-                    self._last_goto_at = t
+        if (result is not None and result.alert_active
+                and self._last_goto_at is not None
+                and t - self._last_goto_at >= self.cfg.retarget_min_interval_s):
+            if self.cfg.use_body_offset:
+                # 상대 명령은 "남은 거리"가 곧 오차다. 아직 멀면 다시 보낸다.
+                tgt = getattr(result, "target", None)
+                if tgt is not None and tgt.has_ground_fix:
+                    remaining = math.hypot(tgt.forward_m, tgt.right_m)
+                    if remaining >= self.cfg.retarget_distance_m:
+                        sent = self._issue_target(result, t)
+                        if sent is not None:
+                            log.info("retargeting: 남은 거리 %.1f m", remaining)
+                            self.target = sent
+                            self._last_goto_at = t
+            else:
+                new_target = self._resolve_target(result)
+                if (new_target is not None and self.target is not None
+                        and distance_m(self.target, new_target)
+                        >= self.cfg.retarget_distance_m):
+                    sent = self.ctl.goto(new_target)
+                    if sent is not None:
+                        log.info("retargeting: crowd moved %.1f m",
+                                 distance_m(self.target, sent))
+                        self.target = sent
+                        self._last_goto_at = t
 
-        if self.target is not None and self.ctl.has_arrived(
-                self.target, self.cfg.arrival_radius_m):
+        if self.target is not None and self._has_arrived(result, t):
             self._enter(MissionState.HOVERING, t, "목표 도달")
             self._payload_deploy(t)
             if self.on_arrived:
                 self.on_arrived(self)       # LED·음성 등 부가 동작
+
+    def _has_arrived(self, result, t: float) -> bool:
+        """도달 판정. 실내에서는 절대 좌표가 없으므로 남은 거리로 본다."""
+        if self.cfg.use_body_offset:
+            tgt = getattr(result, "target", None)
+            if tgt is None or not tgt.has_ground_fix:
+                return False      # 관측이 없으면 도달을 단정하지 않는다
+            return math.hypot(tgt.forward_m, tgt.right_m) <= self.cfg.arrival_radius_m
+        return self.ctl.has_arrived(self.target, self.cfg.arrival_radius_m)
 
     def _hovering(self, result, t: float) -> None:
         if self.elapsed(t) < self.cfg.hover_duration_s:
