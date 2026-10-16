@@ -21,9 +21,10 @@ import argparse
 import logging
 import time
 
-from config import VisionConfig
+from config import VisionConfig, assert_valid, validate
 from flight.mavlink_controller import MavlinkController, SafetyLimits
 from flight.mission import GuidanceConfig, GuidanceMission, MissionState
+from flight.session_log import NullSessionLog, SessionLog
 from hardware.payload import NullPayload, SimulatedPayload
 from link import Receiver, Sender, TelemetryReport, VisionBridge, VisionReport
 from vision.geometry import CameraModel
@@ -44,6 +45,8 @@ def parse_args():
     p.add_argument("--stale-after", type=float, default=2.0,
                    help="이 시간이 지난 관측은 없는 것으로 본다(s)")
     p.add_argument("--dry-run", action="store_true", help="실제 전송 없이 로그만")
+    p.add_argument("--log-dir", default="logs", help="세션 로그 디렉터리")
+    p.add_argument("--no-log", action="store_true", help="세션 로그를 남기지 않는다")
     p.add_argument("--payload", choices=("none", "sim"), default="none",
                    help="none = 미장착, sim = 시간이 걸리는 가짜 기구 (지상 리허설용)")
     return p.parse_args()
@@ -73,10 +76,20 @@ def main() -> int:
     print(f"  * 순항 고도     : {a.altitude:.0f} m   반경 제한 {a.max_radius:.0f} m")
     print(f"  * 페이로드      : {a.payload}")
     print(f"  * 모드          : {'DRY-RUN (명령 미전송)' if a.dry_run else '실제 비행'}")
+    # 잘못된 설정은 조용히 잘못된 판단을 만든다. 이륙 전에 거른다.
+    problems = validate(cfg)
+    limits = SafetyLimits(max_radius_m=a.max_radius)
+    problems += limits.validate()
+    if problems:
+        print("  * 설정 점검     : ❌")
+        for pr in problems:
+            print(f"      - {pr}")
+        print("=" * 70)
+        return 1
+    print("  * 설정 점검     : ✅")
     print("=" * 70)
 
-    ctl = MavlinkController(a.fc, baud=a.baud, dry_run=a.dry_run,
-                            limits=SafetyLimits(max_radius_m=a.max_radius))
+    ctl = MavlinkController(a.fc, baud=a.baud, dry_run=a.dry_run, limits=limits)
     if not ctl.connect(timeout_s=30.0):
         log.error("비행제어기에 연결하지 못했습니다")
         return 1
@@ -98,9 +111,14 @@ def main() -> int:
 
     rx = Receiver(VisionReport, port=a.vision_port, stale_after_s=a.stale_after).start()
     tx = Sender(a.ground, a.telemetry_port) if a.ground else None
+    slog = NullSessionLog() if a.no_log else SessionLog(directory=a.log_dir).open()
+    slog.event("config", fc=a.fc, altitude_m=a.altitude, max_radius_m=a.max_radius,
+               payload=a.payload, dry_run=a.dry_run,
+               camera_pitch_deg=cfg.camera_pitch_deg, imgsz=cfg.imgsz)
 
     seq = 0
     last_telem = 0.0
+    last_state = mission.state.value
     warned_link = False
 
     try:
@@ -112,12 +130,20 @@ def main() -> int:
             if report is None and not warned_link and mission.state is not MissionState.IDLE:
                 log.warning("관측 끊김 (%.1fs) — 마지막 타겟으로 계속, "
                             "이동 타임아웃 시 RTL", rx.last_seen())
+                slog.warning("관측 끊김", age_s=round(rx.last_seen(), 2),
+                             state=mission.state.value)
                 warned_link = True
             elif report is not None:
                 warned_link = False
 
             mission_input = bridge.convert(report, ctl.state.relative_alt_m)
             mission.update(mission_input)
+
+            if mission.state.value != last_state:
+                slog.mission_state(last_state, mission.state.value, mission.reason)
+                if mission.target is not None:
+                    slog.target(mission.target)
+                last_state = mission.state.value
 
             now = time.monotonic()
             if tx is not None and now - last_telem >= 0.5:
@@ -132,6 +158,10 @@ def main() -> int:
                     vision_age_s=round(rx.last_seen(), 2) if rx.received else None,
                 ))
                 last_telem = now
+                slog.vehicle(s, payload_state=mission.payload.state.value,
+                             link_age_s=round(rx.last_seen(), 2) if rx.received else None)
+                if report is not None:
+                    slog.vision(report)
 
             time.sleep(0.05)
 
@@ -141,6 +171,7 @@ def main() -> int:
             mission.abort("운용자 중단")
         return 0
     finally:
+        slog.close()
         rx.stop()
         if tx is not None:
             tx.close()
