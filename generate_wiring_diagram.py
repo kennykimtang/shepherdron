@@ -43,7 +43,7 @@ for j in range(6):
 
 ax.text(100, 2048, "SHEPHERDRON   ·   SYSTEM INTERCONNECT WIRING DIAGRAM",
         fontsize=25, fontweight="bold", color=INK, va="center", zorder=3)
-ax.text(100, 2012, "F450 quadrotor X   ·   3S 11.1 V   ·   Pixhawk 2.4.8 / ArduCopter 4.x   ·   "
+ax.text(100, 2012, "F450 quadrotor X   ·   4S 14.8 V   ·   KoA H743 / ArduCopter 4.x   ·   "
                    "Raspberry Pi 4 Model B companion computer",
         fontsize=12.5, color=GREY, va="center", zorder=3)
 
@@ -98,16 +98,16 @@ ax.add_patch(patches.Rectangle((92, 1255), 2716, 735, fill=False, ec=RULE, lw=1.
 ax.text(106, 1972, "1 · PROPULSION & FLIGHT CONTROL", fontsize=12, fontweight="bold",
         color=GREY, va="center", zorder=3)
 
-comp(110, 1780, 250, 150, "BT1", "3S LiPo",
-     ("11.1 V  2200 mAh  55C", "XT60  ·  185 g", "121 A burst"), accent="#4C4FB0")
+comp(110, 1780, 250, 150, "BT1", "4S LiPo",
+     ("14.8 V  2800 mAh  50C", "XT60  ·  approx 300 g", "140 A burst"), accent="#4C4FB0")
 comp(460, 1780, 250, 150, "PM1", "Power module",
-     ("in  11.1 V from BT1", "out 11.1 V to PDB1", "reg 5.3 V / 2.25 A"), accent=V53)
+     ("in  14.8 V from BT1", "out 14.8 V to PDB1", "VERIFY: H743 may sense"), accent=V53)
 comp(460, 1430, 250, 280, "PDB1", "F450 PDB",
-     ("11.1 V distribution bus", "470 uF / 25 V low-ESR", "across the input pads",
+     ("14.8 V distribution bus", "470 uF / 25 V low-ESR", "across the input pads",
       "", "★  STAR GROUND", "all returns bond here"), accent=V11)
 node(600, 1430, GNDC); ground(600, 1430, 20)
 
-comp(810, 1870, 200, 100, "GPS1", "M8N", ("GPS + compass", "UART + I2C"))
+comp(810, 1870, 200, 100, "OF1", "3901-L0X", ("INDOOR: no GPS", "flow = EK3_SRC1_VELXY 5"))
 comp(1050, 1870, 200, 100, "TM1", "Telemetry", ("2.4 GHz air unit", "57 600 bps"), accent=V50)
 comp(1290, 1870, 210, 100, "RX1", "MC6C RX", ("S.BUS receiver", "manual override"), accent=SER)
 
@@ -116,7 +116,7 @@ ax.add_patch(patches.Rectangle((fcx, fcy), fcw, fch, fc="#FFFFFF", ec=INK, lw=2.
 ax.add_patch(patches.Rectangle((fcx, fcy+fch-31), fcw, 31, fc=INK, ec=INK, lw=2.1, zorder=7))
 ax.text(fcx+12, fcy+fch-15.5, "FC1", fontsize=11.5, fontweight="bold", color="#FFFFFF",
         va="center", zorder=8)
-ax.text(fcx+fcw-12, fcy+fch-15.5, "PIXHAWK 2.4.8   ·   ArduCopter 4.x",
+ax.text(fcx+fcw-12, fcy+fch-15.5, "KoA H743   ·   ArduCopter 4.x",
         fontsize=11.5, fontweight="bold", color="#FFFFFF", ha="right", va="center", zorder=8)
 ax.text(fcx+fcw/2, fcy+fch-56, "flight controller   ·   frame QUAD X",
         fontsize=9.5, color=GREY, ha="center", va="center", zorder=8)
@@ -128,8 +128,8 @@ ax.text(fcx+26, fcy+255,
         "  SERIAL2_BAUD      921   fallback 115\n"
         "  BRD_SAFETYENABLE  1\n"
         "  BATT_MONITOR      4     volt + current\n"
-        "  MOT_BAT_VOLT_MAX  12.6\n"
-        "  MOT_BAT_VOLT_MIN  9.9",
+        "  MOT_BAT_VOLT_MAX  16.8   4S\n"
+        "  MOT_BAT_VOLT_MIN  13.2   4S",
         fontsize=8.7, color=INK, va="top", family="monospace", zorder=8)
 ground(1180, fcy+16, 0)
 
@@ -137,20 +137,20 @@ pin(fcx, 1700, V53, "POWER 6p", "right")
 for xx, col in ((890, SIG), (1150, V50), (1390, SER)):
     pin(xx, fcy+fch, col)
 pin(1300, fcy, SER)
-ax.text(890, 1812, "GPS 6p + I2C 4p", fontsize=8.2, color=INK, ha="center", va="bottom", zorder=9)
+ax.text(890, 1812, "flow + range", fontsize=8.2, color=INK, ha="center", va="bottom", zorder=9)
 ax.text(1150, 1812, "TELEM1 6p", fontsize=8.2, color=INK, ha="center", va="bottom", zorder=9)
 ax.text(1390, 1812, "RC IN 3p", fontsize=8.2, color=INK, ha="center", va="bottom", zorder=9)
 ax.text(1316, 1332, "TELEM2 6p", fontsize=8.2, color=INK, va="bottom", zorder=9)
 for i, yy in enumerate((1740, 1620, 1500, 1380)):
     pin(fcx+fcw, yy, V11, f"MAIN OUT {i+1}", "left")
 
-esc_rows = [(1690, "ESC1", "M1", "front-right", "CCW", "1045R"),
-            (1570, "ESC2", "M2", "rear-left",   "CCW", "1045R"),
-            (1450, "ESC3", "M3", "front-left",  "CW",  "1045"),
-            (1330, "ESC4", "M4", "rear-right",  "CW",  "1045")]
+esc_rows = [(1690, "ESC1", "M1", "front-right", "CCW", "T9545R"),
+            (1570, "ESC2", "M2", "rear-left",   "CCW", "T9545R"),
+            (1450, "ESC3", "M3", "front-left",  "CW",  "T9545"),
+            (1330, "ESC4", "M4", "rear-right",  "CW",  "T9545")]
 for y, eref, mref, pos, rot, prop in esc_rows:
-    comp(1700, y, 270, 100, eref, "35 A BLHeli_S", ("2-4S  ·  opto PWM input",), accent="#5A6676")
-    comp(2060, y, 420, 100, mref, f"2212 920KV  ·  {pos}",
+    comp(1700, y, 270, 100, eref, "AIR 20A V2", ("3-4S  ·  AirGear 355 set",), accent="#5A6676")
+    comp(2060, y, 420, 100, mref, f"AIR2213 920KV  ·  {pos}",
          (f"rotation {rot}      propeller {prop}",), accent=PHASE)
 
 # ═══════════════════ ZONE 2 · COMPANION + MISSION PAYLOAD ═══════════════════
@@ -160,7 +160,7 @@ ax.text(106, 1212, "2 · COMPANION & PAYLOAD", fontsize=12, fontweight="bold",
         color=GREY, va="center", zorder=3)
 
 comp(170, 680, 290, 170, "U1", "UBEC 5V / 5A",
-     ("in 11.1 V from PDB1", "out 5.00 V switching", "measured peak 3.15 A"), accent=V50)
+     ("in 14.8 V from PDB1", "out 5.00 V switching", "measured peak 3.15 A"), accent=V50)
 comp(170, 900, 290, 180, "CAM1", "Camera 3 Wide",
      ("Sony IMX708  ·  12 MP", "102 deg H / 120 deg D", "focus 5 cm - inf",
       "200 mm FPC, CSI-2"))
@@ -174,14 +174,14 @@ ax.text(px+pw-12, py+ph-15.5, "RASPBERRY PI 4 MODEL B  ·  2 GB",
         fontsize=11.5, fontweight="bold", color="#FFFFFF", ha="right", va="center", zorder=8)
 ax.text(px+170, py+ph-56,
         "companion computer\n"
-        "   YOLOv8n person detection\n"
-        "   foot-point ground mapping\n"
-        "   3 x 3 grid density decision\n"
-        "   MAVLink2 goto command\n\n"
-        "INFERENCE BUDGET\n"
-        "   640 px ncnn    approx 3 FPS     unusable\n"
-        "   320 px ncnn    approx 8-10 FPS  USE THIS\n"
-        "   heatsink + fan MANDATORY",
+        "   camera capture + MJPEG stream\n"
+        "   MAVLink bridge to FC1\n"
+        "   payload / LED / audio I/O\n"
+        "   mission state machine\n\n"
+        "VISION RUNS ON THE GROUND\n"
+        "   laptop does YOLOv8n, sends\n"
+        "   observations only over UDP\n"
+        "   heatsink is enough, no fan",
         fontsize=8.8, color=INK, va="top", family="monospace", zorder=8)
 pin(px, 790, V50, "J8-2 / J8-6\n5 V + GND", "right")
 pin(px, 990, SIG, "CSI-2  camera", "right")
@@ -216,11 +216,11 @@ comp(1340, 850, 230, 330, "U4", "74AHCT125",
 comp(1700, 1055, 440, 135, "LED1", "WS2812B strip  ·  30 px",
      ("5 V addressable  ·  470 ohm series on DIN", "1000 uF bulk across 5 V / GND",
       "brightness clamped to 50 %  ->  0.90 A"), accent=SER)
-comp(1700, 870, 340, 150, "U3", "DMD-150 driver",
-     ("H-bridge  6.5 - 40 V", "15 A / 360 W  ·  53 g", "5 V TTL logic input"), accent=V53)
-comp(2210, 870, 420, 150, "M5", "LMB2036U actuator",
-     ("12 V  ·  120 N  ·  150 mm", "2-wire polarity reversal", "integral limit switches"),
-     accent=PHASE)
+comp(1700, 870, 340, 150, "U3", "Payload driver  TBD",
+     ("mechanism undecided", "see issue #9", "winch servo recommended"), accent=V53)
+comp(2210, 870, 420, 150, "M5", "Deployable structure  TBD",
+     ("600 mm outdoor / 300 mm indoor", "telescopic mast or Kresling",
+      "LIMIT SWITCH for stow detect"), accent=PHASE)
 comp(1700, 660, 340, 150, "U2", "MAX98357A",
      ("I2S class-D amp", "3.2 W into 4 ohm", "3.3 V logic, no shifter"), accent=AUD)
 comp(2210, 660, 340, 150, "LS1", "Speaker 3W 4ohm",
@@ -252,7 +252,7 @@ wire([(560, 1430), (560, 1270), (115, 1270), (115, 600), (1600, 600), (1600, 900
       (1700, 900)], V11, 2.8, hops=[(1600, 630, "v"), (1600, 700, "v"), (1600, 760, "v")])
 wire([(115, 800), (170, 800)], V11, 2.8); node(115, 800, V11)
 wid(250, 1281, "W13", V11)
-wid(820, 611, "W14   11.1 V to the actuator driver  —  never take this from the 5 V rail", V11)
+wid(820, 611, "W14   14.8 V to the payload driver  :  never take this from the 5 V rail", V11)
 # W15 / W16 the 5 V clean rail
 wire([(460, 790), (500, 790)], V50, 2.8);  wid(480, 801, "W15", V50)
 wire([(480, 790), (480, 630), (2700, 630), (2700, 1215), (1455, 1215), (1455, 1180)], V50, 2.6)
@@ -288,7 +288,7 @@ for gx, gy in ((300, 680), (1455, 850), (1790, 1055), (1790, 870), (1790, 660),
 ly = 525
 ax.text(110, ly, "LEGEND", fontsize=9.5, fontweight="bold", color=GREY, va="center", zorder=8)
 cur = 200
-for lbl, col, lw_ in (("11.1 V main", V11, 4.0), ("5.3 V FC rail", V53, 2.4),
+for lbl, col, lw_ in (("14.8 V main", V11, 4.0), ("5.3 V FC rail", V53, 2.4),
                       ("5.0 V clean", V50, 2.4), ("signal", SIG, 2.0),
                       ("serial / data", SER, 2.0), ("3-phase", PHASE, 3.0),
                       ("I2S audio", AUD, 2.0)):
@@ -317,8 +317,8 @@ ax.text(cx, cy, "FC1", fontsize=8.4, fontweight="bold", color=INK, ha="center",
 ax.annotate("", xy=(cx, cy+r+54), xytext=(cx, cy+36),
             arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.8), zorder=9)
 ax.text(cx+12, cy+r+44, "FWD", fontsize=9, fontweight="bold", color=INK, zorder=9)
-for sx, sy, ref, rot, prop in ((1, 1, "M1", "CCW", "1045R"), (-1, -1, "M2", "CCW", "1045R"),
-                               (-1, 1, "M3", "CW", "1045"), (1, -1, "M4", "CW", "1045")):
+for sx, sy, ref, rot, prop in ((1, 1, "M1", "CCW", "T9545R"), (-1, -1, "M2", "CCW", "T9545R"),
+                               (-1, 1, "M3", "CW", "T9545"), (1, -1, "M4", "CW", "T9545")):
     mx, my = cx + sx*r, cy + sy*r
     ax.plot([cx, mx], [cy, my], color=INK, lw=5, solid_capstyle="round", zorder=7)
     ax.add_patch(patches.Circle((mx, my), 30, fc="#FFFFFF", ec=PHASE, lw=2.2, zorder=8))
@@ -333,7 +333,7 @@ for sx, sy, ref, rot, prop in ((1, 1, "M1", "CCW", "1045R"), (-1, -1, "M2", "CCW
                 arrowprops=dict(arrowstyle="-|>", color=PHASE, lw=1.3), zorder=9)
     ax.text(mx + sx*74, my + sy*20, prop, fontsize=8.6, fontweight="bold", color=INK,
             ha="center", va="center", zorder=9)
-ax.text(390, 112, "1045R is the reversed (pusher) blade.  A blade fitted to the wrong motor\n"
+ax.text(390, 112, "T9545R is the reversed (pusher) blade.  A blade fitted to the wrong motor\n"
                   "flips the aircraft on takeoff.",
         fontsize=8.0, color="#B01020", ha="center", va="center", zorder=9)
 
@@ -352,17 +352,17 @@ for x_, lbl in colx:
     ax.text(x_, yy, lbl, fontsize=8.5, fontweight="bold", color=GREY, va="center", zorder=8)
 ax.plot([tx+10, tx+tw-10], [yy-10, yy-10], color=RULE, lw=1.0, zorder=7)
 rows = [
- ("W01","BT1 XT60","PM1 input","11.1 V","12 AWG silicone","main battery lead"),
- ("W03","PM1 output","PDB1 pad","11.1 V","12 AWG silicone","470 uF at the pad"),
- ("W04","PDB1 pad","ESC1-4 input","11.1 V","14 AWG x 4","19.8 A total at hover"),
+ ("W01","BT1 XT60","PM1 input","14.8 V","12 AWG silicone","main battery lead"),
+ ("W03","PM1 output","PDB1 pad","14.8 V","12 AWG silicone","470 uF at the pad"),
+ ("W04","PDB1 pad","ESC1-4 input","14.8 V","14 AWG x 4","11.1 A total at hover"),
  ("W02","PM1 6-pin","FC1 POWER","5.3 V","6p molex","feeds FC1 GPS1 TM1 RX1 only"),
  ("W05-08","FC1 MAIN 1-4","ESC1-4 signal","PWM","3p servo","motor order per DETAIL A"),
- ("W09","GPS1","FC1 GPS + I2C","UART, I2C","6p + 4p",""),
+ ("W09","OF1 flow","FC1 UART/I2C","flow + range","per datasheet","INDOOR: replaces GPS"),
  ("W10","TM1","FC1 TELEM1","UART","6p","57 600 bps"),
  ("W11","RX1","FC1 RC IN","S.BUS","3p servo","manual override path"),
  ("W12","FC1 TELEM2","PC1 USB-A","MAVLink2","USB-TTL 3.3 V","do NOT land the 5 V wire"),
- ("W13","PDB1 pad","U1 input","11.1 V","16 AWG",""),
- ("W14","PDB1 pad","U3 Vcc","11.1 V","16 AWG","actuator motive power"),
+ ("W13","PDB1 pad","U1 input","14.8 V","16 AWG",""),
+ ("W14","PDB1 pad","U3 Vcc","14.8 V","16 AWG","payload motive power"),
  ("W15","U1 output","PC1 J8-2 / J8-6","5.0 V","18 AWG","fit an inline 3 A fuse"),
  ("W16","U1 output","U4 Vcc, LED1 Vcc","5.0 V","18 AWG","1000 uF at LED1"),
  ("W17","5 V rail","U2 Vin","5.0 V","22 AWG",""),
@@ -372,8 +372,8 @@ rows = [
  ("W21","PC1 J8-31","U4 A3","DIR","22 AWG","extend / retract"),
  ("W22-24","PC1 J8-12/35/40","U2 I2S","I2S","22 AWG x 3","3.3 V direct, no shifter"),
  ("W25","U4 Y1","LED1 DIN","5 V data","22 AWG","470 ohm in series"),
- ("W26-27","U4 Y2, Y3","U3 PWM, DIR","5 V TTL","22 AWG x 2",""),
- ("W28","U3 output","M5","switched 11.1 V","18 AWG twisted","polarity reversal"),
+ ("W26-27","U4 Y2, Y3","U3 PWM, DIR","5 V TTL","22 AWG x 2","payload TBD #9"),
+ ("W28","U3 output","M5","switched 14.8 V","18 AWG twisted","payload TBD #9"),
  ("W29","U2 output","LS1","audio","speaker pair",""),
 ]
 yy -= 23
@@ -393,14 +393,14 @@ ax.text(nx+12, ny+nh-14.5, "NOTES  —  READ BEFORE FIRST POWER-UP", fontsize=10
         fontweight="bold", color="#FFFFFF", va="center", zorder=8)
 notes = [
  "1.  Bond every GND to the PDB1 star point. Split returns inject switching noise into the PWM lines.",
- "2.  PM1 regulates 5.3 V at 2.25 A. It feeds FC1, GPS1, TM1 and RX1 only — never PC1.",
+ "2.  VERIFY: KoA H743 may have built-in voltage/current sensing. Check before buying PM1.",
  "3.  PC1 is fed through J8-2 / J8-6, which bypasses the board polyfuse. Fit an inline 3 A fuse.",
- "4.  3.3 V GPIO sits below the WS2812B VIH of 0.7 x VDD = 3.5 V and below the DMD-150 5 V TTL",
+ "4.  3.3 V GPIO sits below the WS2812B VIH of 0.7 x VDD = 3.5 V and below the 5 V TTL",
  "      threshold. U4 is required on W25, W26 and W27.",
  "5.  GPIO18 is the I2S bit clock. It cannot also drive the LED strip or the actuator PWM, and",
  "      GPIO12 shares channel PWM0 with GPIO18, so it is unavailable too.",
  "6.  First spin-up with the propellers removed. Verify rotation against DETAIL A, then fit blades.",
- "7.  Restrain the airframe before stroking M5 — 120 N of reaction will move an unsecured frame.",
+ "7.  INDOOR: ceiling 4.22 m caps altitude at 3.4 m. A 600 mm structure reaches head height.",
  "8.  Clamp LED1 brightness in software. 30 px at full white draws 1.8 A and browns out PC1.",
 ]
 yy = ny + nh - 48
@@ -414,14 +414,14 @@ ax.add_patch(patches.Rectangle((bx, by), bw, bh, fc="#FFFFFF", ec=INK, lw=1.6, z
 ax.add_patch(patches.Rectangle((bx, by+bh-29), bw, 29, fc=INK, ec=INK, lw=1.6, zorder=7))
 ax.text(bx+12, by+bh-14.5, "DESIGN BUDGET", fontsize=10.5, fontweight="bold",
         color="#FFFFFF", va="center", zorder=8)
-ax.text(bx+bw-12, by+bh-14.5, "SHEET 1 OF 1   ·   REV B   ·   2026-10-12",
+ax.text(bx+bw-12, by+bh-14.5, "SHEET 1 OF 1   ·   REV C   ·   2026-10-16",
         fontsize=9, color="#FFFFFF", ha="right", va="center", zorder=8)
-bud = [("All-up weight", "1 567 g", INK),
-       ("Static thrust, 4 x 1045 at 11.1 V", "2 800 g", INK),
-       ("Thrust to weight", "1.79 : 1        target 2.0 : 1", AUD),
-       ("Hover throttle  /  hover current", "56 %   /   19.8 A", INK),
-       ("Endurance, 2200 mAh at 80 % DoD", "5.3 min        INSUFFICIENT", "#B01020"),
-       ("Endurance, 3300 mAh", "7.7 min        RECOMMENDED", V50),
+bud = [("All-up weight", "1 463 g", INK),
+       ("Static thrust, 4 x T9545 at 14.8 V", "3 400 g", INK),
+       ("Thrust to weight", "2.32 : 1        target 2.0 : 1", V50),
+       ("Hover throttle  /  hover current", "43 %   /   11.1 A", INK),
+       ("Endurance, 2800 mAh at 80 % DoD", "12.1 min       OK", V50),
+       ("Indoor ceiling 4.22 m", "max altitude 3.4 m", AUD),
        ("5 V rail load", "3.15 A of 5.00 A        63 %", V50)]
 yy = by + bh - 48
 for k, v, c in bud:
