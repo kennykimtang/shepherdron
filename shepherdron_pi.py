@@ -41,6 +41,11 @@ def parse_args():
     p.add_argument("--telemetry-port", type=int, default=47601)
     p.add_argument("--altitude", type=float, default=10.0, help="순항 고도(m)")
     p.add_argument("--max-radius", type=float, default=100.0, help="홈 기준 최대 반경(m)")
+    p.add_argument("--indoor", action="store_true",
+                   help="실내 프로파일: GPS 불요, 고도·반경 제한, 기수 기준 상대 이동")
+    p.add_argument("--ceiling", type=float, default=4.2,
+                   help="실내 천장 높이(m). --indoor 일 때 최대 고도를 여기서 역산")
+    p.add_argument("--room-span", type=float, default=15.0, help="실내 최대 이동 반경(m)")
     p.add_argument("--hover", type=float, default=30.0, help="안내 유지 시간(s)")
     p.add_argument("--stale-after", type=float, default=2.0,
                    help="이 시간이 지난 관측은 없는 것으로 본다(s)")
@@ -73,12 +78,20 @@ def main() -> int:
     print("=" * 70)
     print(f"  * 비행제어기    : {a.fc}")
     print(f"  * 관측 수신     : 0.0.0.0:{a.vision_port}  (stale > {a.stale_after}s 무시)")
-    print(f"  * 순항 고도     : {a.altitude:.0f} m   반경 제한 {a.max_radius:.0f} m")
+    if a.indoor:
+        print(f"  * 프로파일      : 실내 (천장 {a.ceiling:.2f} m, GPS 불요, 상대 이동)")
+        print(f"  * 순항 고도     : {a.altitude:.1f} m")
+    else:
+        print(f"  * 순항 고도     : {a.altitude:.0f} m   반경 제한 {a.max_radius:.0f} m")
     print(f"  * 페이로드      : {a.payload}")
     print(f"  * 모드          : {'DRY-RUN (명령 미전송)' if a.dry_run else '실제 비행'}")
     # 잘못된 설정은 조용히 잘못된 판단을 만든다. 이륙 전에 거른다.
     problems = validate(cfg)
-    limits = SafetyLimits(max_radius_m=a.max_radius)
+    limits = (SafetyLimits.indoor(ceiling_m=a.ceiling, room_span_m=a.room_span)
+              if a.indoor else SafetyLimits(max_radius_m=a.max_radius))
+    if a.indoor and a.altitude > limits.max_altitude_m:
+        problems.append(f"--altitude {a.altitude} m 가 천장 {a.ceiling} m 기준 "
+                        f"최대 고도 {limits.max_altitude_m} m 를 넘습니다")
     problems += limits.validate()
     if problems:
         print("  * 설정 점검     : ❌")
@@ -102,7 +115,10 @@ def main() -> int:
     payload = SimulatedPayload() if a.payload == "sim" else NullPayload()
     mission = GuidanceMission(
         ctl,
-        GuidanceConfig(cruise_altitude_m=a.altitude, hover_duration_s=a.hover),
+        GuidanceConfig(cruise_altitude_m=a.altitude, hover_duration_s=a.hover,
+                       use_body_offset=a.indoor,
+                       arrival_radius_m=0.8 if a.indoor else 2.0,
+                       retarget_distance_m=1.5 if a.indoor else 5.0),
         payload=payload,
         on_arrived=on_arrived,
         on_complete=lambda m: log.info("✅ 임무 완료 (누적 %d회)", m.missions_completed),
@@ -112,7 +128,9 @@ def main() -> int:
     rx = Receiver(VisionReport, port=a.vision_port, stale_after_s=a.stale_after).start()
     tx = Sender(a.ground, a.telemetry_port) if a.ground else None
     slog = NullSessionLog() if a.no_log else SessionLog(directory=a.log_dir).open()
-    slog.event("config", fc=a.fc, altitude_m=a.altitude, max_radius_m=a.max_radius,
+    slog.event("config", fc=a.fc, altitude_m=a.altitude,
+               indoor=a.indoor, ceiling_m=a.ceiling if a.indoor else None,
+               max_radius_m=limits.max_radius_m, max_altitude_m=limits.max_altitude_m,
                payload=a.payload, dry_run=a.dry_run,
                camera_pitch_deg=cfg.camera_pitch_deg, imgsz=cfg.imgsz)
 

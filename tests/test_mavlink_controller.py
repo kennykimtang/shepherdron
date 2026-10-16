@@ -177,3 +177,23 @@ class TestHealth:
         c = ready_controller()
         c.state.connected = False
         assert c.is_healthy(now=1.0) is False
+
+
+class TestHeartbeatSentinel:
+    """0.0 은 유효한 시각이다. falsy 검사로 '받은 적 없음'을 표현하면 안 된다.
+
+    실제로 time.monotonic() 이 0 이 되는 일은 없어 production 에서는 드러나지
+    않지만, 결정적 테스트를 불가능하게 만들고 같은 패턴이 mission.elapsed() 에서는
+    실제 버그였다 (이동 타임아웃이 영영 걸리지 않았다).
+    """
+
+    def test_never_received_is_infinite(self):
+        assert VehicleState().heartbeat_age() == math.inf
+
+    def test_zero_is_a_valid_timestamp(self):
+        assert VehicleState(last_heartbeat=0.0).heartbeat_age(now=1.5) == pytest.approx(1.5)
+
+    def test_healthy_at_time_zero(self):
+        c = MavlinkController(dry_run=True, limits=SafetyLimits(heartbeat_timeout_s=3.0))
+        c.state = VehicleState(connected=True, last_heartbeat=0.0)
+        assert c.is_healthy(now=1.0) is True

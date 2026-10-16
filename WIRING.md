@@ -1,5 +1,10 @@
 # 🔌 Shepherdron 결선 명세 (텍스트판, rev.B)
 
+> ⚠️ **이 문서는 3S + Pixhawk 2.4.8 기준입니다.** 2026-10-14 실구매로 **4S + AirGear 355
+> + KoA H743** 로 바뀌었습니다. 모터·프로펠러·FC 핀맵은 [HARDWARE_SPEC.md §0](HARDWARE_SPEC.md)
+> 을 따르고, H743 의 TELEM 포트는 제조사 매뉴얼로 확인하세요.
+> 실내 시연 전제는 [INDOOR.md](INDOOR.md).
+
 > [shepherdron_wiring_diagram.png](shepherdron_wiring_diagram.png)와 **동일한 내용**을 텍스트로 옮긴 것입니다.
 > 부품 기호(BT1, U3 …)와 배선 번호(W01 …)는 도면과 1:1로 같습니다.
 > 수치 근거는 [HARDWARE_SPEC.md](HARDWARE_SPEC.md) 참조.

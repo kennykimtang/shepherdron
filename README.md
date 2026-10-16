@@ -20,6 +20,7 @@ Shepherdron : 군중 밀집도 자율 안내 드론
 | [FLIGHT.md](FLIGHT.md) | 비행 제어 : 측지 변환·안전 가드·SITL |
 | [PAYLOAD.md](PAYLOAD.md) | 페이로드 : 전개/수축, 600mm 기구 선택지 |
 | [OPERATIONS.md](OPERATIONS.md) | 현장 운용 : 비행 절차·ArduPilot 설정·문제 해결 |
+| [INDOOR.md](INDOOR.md) | 실내 시연 : GPS 없는 비행·고도 제약·안전 구성 |
 | [WIRING.md](WIRING.md) | 결선 명세 : 배선표 23선·핀맵·조립 순서 |
 | [HARDWARE_SPEC.md](HARDWARE_SPEC.md) | 부품 검증 : BOM·추력/전력 예산·검증 근거 |
 

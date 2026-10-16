@@ -48,7 +48,9 @@ class VehicleState:
     battery_remaining_pct: Optional[int] = None
     gps_fix_type: int = 0                 # 0-1 없음, 2 2D, 3 3D, 4+ DGPS/RTK
     satellites: int = 0
-    last_heartbeat: float = 0.0
+    # 0.0 은 유효한 시각이므로 sentinel 로 쓰면 안 된다 (falsy 검사 금지).
+    # 받은 적이 없음은 None 으로 표현한다.
+    last_heartbeat: Optional[float] = None
 
     @property
     def position(self) -> Optional[GeoPoint]:
@@ -61,14 +63,17 @@ class VehicleState:
         return self.gps_fix_type >= 3
 
     def heartbeat_age(self, now: Optional[float] = None) -> float:
-        if self.last_heartbeat == 0.0:
+        if self.last_heartbeat is None:
             return math.inf
         return (now if now is not None else time.monotonic()) - self.last_heartbeat
 
 
 @dataclass
 class SafetyLimits:
-    """비행 범위 제한. 기본값은 교내 시연 규모를 가정한다."""
+    """비행 범위 제한. 기본값은 야외 시연 규모를 가정한다.
+
+    실내는 전제가 완전히 다르므로 SafetyLimits.indoor() 를 쓴다.
+    """
 
     max_radius_m: float = 100.0        # 홈에서 벗어날 수 있는 최대 수평 거리
     min_altitude_m: float = 3.0        # 이보다 낮게는 유도 비행하지 않는다
@@ -76,6 +81,39 @@ class SafetyLimits:
     min_battery_pct: int = 25          # 이 아래로 떨어지면 신규 임무 거부
     min_satellites: int = 8
     heartbeat_timeout_s: float = 3.0
+
+    require_gps: bool = True           # 실내에서는 GPS fix 를 기다릴 수 없다
+    max_step_m: float = 20.0           # 한 번의 상대 이동 명령 최대 거리
+
+    @classmethod
+    def indoor(
+        cls,
+        ceiling_m: float = 4.2,
+        room_span_m: float = 15.0,
+        **overrides,
+    ) -> "SafetyLimits":
+        """실내 강당용 제한.
+
+        천장 높이에서 거꾸로 계산한다. 로터 지름의 3배(약 0.7 m) 이상
+        천장에서 떨어져야 천장효과(ceiling effect)로 빨려 올라가지 않는다.
+        기체 두께 0.15 m 도 뺀다.
+
+        GPS 는 잡히지 않으므로 require_gps=False 다. 대신 옵티컬 플로우와
+        거리계로 위치를 잡아야 하며, 그 설정은 OPERATIONS.md 를 따른다.
+        """
+        max_alt = max(1.0, ceiling_m - 0.7 - 0.15)
+        d = dict(
+            max_radius_m=room_span_m,
+            min_altitude_m=1.0,
+            max_altitude_m=round(max_alt, 1),
+            min_battery_pct=30,        # 실내는 비상 착륙지가 없다. 여유를 더 둔다
+            min_satellites=0,
+            heartbeat_timeout_s=2.0,   # 사람과 가까우므로 더 빨리 알아챈다
+            require_gps=False,
+            max_step_m=5.0,            # 좁은 공간에서 한 번에 멀리 보내지 않는다
+        )
+        d.update(overrides)
+        return cls(**d)
 
     def validate(self) -> list[str]:
         """제한값 정합성 점검. 비행 전에 호출한다."""
@@ -89,6 +127,11 @@ class SafetyLimits:
             p.append(f"min_altitude_m={self.min_altitude_m} 는 0보다 커야 합니다")
         if self.heartbeat_timeout_s <= 0:
             p.append(f"heartbeat_timeout_s={self.heartbeat_timeout_s} 는 0보다 커야 합니다")
+        if self.max_step_m <= 0:
+            p.append(f"max_step_m={self.max_step_m} 는 0보다 커야 합니다")
+        if self.max_step_m > self.max_radius_m:
+            p.append(f"max_step_m({self.max_step_m}) > max_radius_m({self.max_radius_m}) "
+                     f"— 한 번에 허용 범위를 벗어날 수 있습니다")
         if not 0 <= self.min_battery_pct <= 100:
             p.append(f"min_battery_pct={self.min_battery_pct} 는 0~100 이어야 합니다")
         return p
@@ -205,10 +248,16 @@ class MavlinkController:
                 and self.state.heartbeat_age(now) < self.limits.heartbeat_timeout_s)
 
     # ─────────────────────────── 사전 점검 ───────────────────────────
-    def preflight_check(self, require_gps: bool = True,
+    def preflight_check(self, require_gps: Optional[bool] = None,
                         now: Optional[float] = None) -> list[str]:
-        """비행 전 점검. 문제 목록을 돌려준다. 비어 있으면 정상."""
+        """비행 전 점검. 문제 목록을 돌려준다. 비어 있으면 정상.
+
+        require_gps 를 주지 않으면 SafetyLimits.require_gps 를 따른다.
+        실내 프로파일에서는 False 이므로 GPS fix 를 기다리지 않는다.
+        """
         s, lim = self.state, self.limits
+        if require_gps is None:
+            require_gps = lim.require_gps
         problems: list[str] = []
 
         if not s.connected:
@@ -228,7 +277,7 @@ class MavlinkController:
                             f"< {lim.min_battery_pct}%)")
         return problems
 
-    def assert_ready(self, require_gps: bool = True,
+    def assert_ready(self, require_gps: Optional[bool] = None,
                      now: Optional[float] = None) -> None:
         problems = self.preflight_check(require_gps, now)
         if problems:
@@ -271,7 +320,8 @@ class MavlinkController:
         log.error("mode change to %s not confirmed (still %s)", mode, self.state.mode)
         return False
 
-    def arm(self, timeout_s: float = 10.0, require_gps: bool = True) -> bool:
+    def arm(self, timeout_s: float = 10.0,
+            require_gps: Optional[bool] = None) -> bool:
         self.assert_ready(require_gps)
         from pymavlink import mavutil
 
@@ -376,6 +426,64 @@ class MavlinkController:
         )
         log.info("goto %s", target)
         return target
+
+    def goto_body_offset(
+        self, forward_m: float, right_m: float, down_m: float = 0.0
+    ) -> Optional[tuple]:
+        """기수 기준 상대 이동. GPS 없이 실내에서 쓰는 경로.
+
+        비전은 이미 "기수 기준 전방 X m, 우현 Y m"를 낸다. GPS 가 있으면
+        그것을 위경도로 바꿔 goto() 하지만, 실내에서는 위경도가 없으므로
+        상대 오프셋을 그대로 보낸다 — 변환 한 단계가 사라진다.
+
+        down_m=0 이면 현재 고도를 유지한다 (NED 이므로 아래가 +).
+        반환: 실제로 보낸 (forward, right, down). 거부되면 None.
+        """
+        lim = self.limits
+
+        if self.state.mode != "GUIDED":
+            log.error("goto_body_offset refused: mode is %s, not GUIDED", self.state.mode)
+            return None
+        if not self.state.armed:
+            log.error("goto_body_offset refused: disarmed")
+            return None
+
+        # 고도 확인 — 상대 명령이라 현재 고도에 down_m 을 더한 값이 범위 안이어야 한다
+        alt = self.state.relative_alt_m
+        if alt is not None:
+            target_alt = alt - down_m
+            if not (lim.min_altitude_m <= target_alt <= lim.max_altitude_m):
+                log.error("goto_body_offset refused: 목표 고도 %.1f m 가 "
+                          "[%.1f, %.1f] 밖입니다", target_alt,
+                          lim.min_altitude_m, lim.max_altitude_m)
+                return None
+
+        # 한 번에 멀리 보내지 않는다. 좁은 실내에서 특히 중요하다.
+        dist = math.hypot(forward_m, right_m)
+        if dist > lim.max_step_m:
+            k = lim.max_step_m / dist
+            forward_m, right_m = forward_m * k, right_m * k
+            log.warning("상대 이동 %.1f m → %.1f m 로 제한", dist, lim.max_step_m)
+
+        if self.dry_run:
+            log.info("[dry-run] goto_body_offset fwd=%.2f right=%.2f down=%.2f",
+                     forward_m, right_m, down_m)
+            return (forward_m, right_m, down_m)
+
+        from pymavlink import mavutil
+        self.conn.mav.set_position_target_local_ned_send(
+            0,
+            self._target_system, self._target_component,
+            mavutil.mavlink.MAV_FRAME_BODY_OFFSET_NED,
+            POSITION_ONLY_MASK,
+            float(forward_m), float(right_m), float(down_m),
+            0, 0, 0,
+            0, 0, 0,
+            0, 0,
+        )
+        log.info("goto_body_offset fwd=%.2f right=%.2f down=%.2f",
+                 forward_m, right_m, down_m)
+        return (forward_m, right_m, down_m)
 
     def distance_to(self, point: GeoPoint) -> Optional[float]:
         pos = self.state.position
