@@ -38,6 +38,8 @@
 
 ### 아직 구매 목록에 없는 것
 
+> 📋 정리된 구매 목록과 우선순위는 **[PURCHASE.md](PURCHASE.md)** 참조
+
 | 부품 | 비고 |
 |---|---|
 | **수신기** | RadioMaster Pocket CC2500 용 (FrSky D8/D16 호환) |
