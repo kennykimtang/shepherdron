@@ -54,6 +54,7 @@ flight/
    │     (군중 이동) │          + LED/음성 │           RTL 금지  │
    └──────────────┴───────────────┴─────────────────┴─────────────────┘
                    링크 끊김 / 배터리 부족 → FAILSAFE → RTL
+                   조종사 모드 전환        → STANDBY (명령 중단)
 ```
 
 상태 전이는 전부 명시적입니다. "아마 도착했겠지"로 다음 단계로 넘어가지 않습니다.
@@ -73,6 +74,7 @@ flight/
 | **링크 감시** | heartbeat가 끊기면 어느 상태에서든 FAILSAFE → RTL |
 | **재조준 제한** | 타겟이 `retarget_distance_m` 이상 움직였을 때만, 최소 간격을 두고 재명령 |
 | **쿨다운** | 임무 종료 후 `mission_cooldown_s` 동안 새 경보를 무시 |
+| **조종사 우선** | 비행 모드가 임무 기대값에서 벗어나면 즉시 `STANDBY` 로 물러나 **비행 명령을 일체 내지 않습니다** |
 | **dry_run** | 실제 전송 없이 로그만 남깁니다. SITL 연결 전 로직 검증용 |
 
 ```python
@@ -165,4 +167,4 @@ pytest tests/test_geodesy.py tests/test_mavlink_controller.py \
 - [x] 전개 상태로 복귀하지 않도록 RETRACTING 상태 추가 ([PAYLOAD.md](PAYLOAD.md))
 - [ ] **[NAV-05]** 정밀 호버링 — 현재는 RTL에 의존, 위치 유지 정확도 측정 필요
 - [ ] 비전 파이프라인에 `pipeline.set_altitude()`로 기압계 고도를 주입하는 배선
-- [ ] 조종기 개입 감지 → `mission.abort()` 연동
+- [x] 조종기 개입 감지 → `STANDBY` 자동 전환
