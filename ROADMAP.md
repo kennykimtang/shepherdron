@@ -1,64 +1,138 @@
-# 🗺️ Shepherdron 프로젝트 개발 로드맵 (Roadmap)
+Shepherdron 개발 로드맵
 
-본 로드맵은 **Shepherdron(하늘의 안내자)** 프로젝트의 주차별 개발 단계와 마일스톤 달성 목표를 정의합니다.
+최근 갱신 : 2026-10-16
 
 ---
 
-## 📅 단계별 마일스톤 (Milestones)
+현재 상태
+
+| Phase | 내용 | 상태 |
+|---|---|---|
+| 1 | 비전 인식 및 밀집도 판정 | 코어 완료 · 현장 검증 남음 |
+| 2 | 자율비행 제어 (MAVLink) | 코어 완료 · SITL/실기 검증 남음 |
+| 3 | 기구부 및 안내 시스템 | 소프트웨어 준비 완료 · **기구 방식 미결정** |
+| 4 | 통합 및 시연 | 통합 완료 · 현장 시연 남음 |
+
+**소프트웨어는 대부분 올라왔고, 남은 일은 거의 전부 실기 검증입니다.**
+테스트 268건이 하드웨어 없이 돌아갑니다.
+
+---
+
+일정
 
 ```mermaid
 gantt
-    title Shepherdron 프로젝트 전체 일정
+    title Shepherdron 전체 일정
     dateFormat  YYYY-MM-DD
-    section Phase 1: 비전 코어
-    YOLOv8 모델 및 Foot-point 연산      :done,    p1_1, 2026-10-10, 2026-10-12
-    IP Webcam 실시간 스트림 파이프라인    :done,    p1_2, 2026-10-12, 2026-10-13
-    실제 환경 군중 탐지 & 임계치 튜닝   :active,  p1_3, 2026-10-13, 2026-10-16
-    section Phase 2: 비행 제어 (MAVLink)
-    DroneKit 환경 구성 & SITL 시뮬레이션 :         p2_1, 2026-10-16, 2026-10-20
-    픽스호크 UART 통신 & GUIDED 전환     :         p2_2, 2026-10-20, 2026-10-24
-    타겟 좌표 비행 & 정밀 호버링 제어    :         p2_3, 2026-10-24, 2026-10-28
-    section Phase 3: 하드웨어 가구부
-    전원 분배(UBEC/PDB) & 배선 구축       :         p3_1, 2026-10-20, 2026-10-25
-    리니어 액추에이터 오리가미 구조 전개   :         p3_2, 2026-10-25, 2026-10-30
-    WS2812B LED & 스피커 경보 연동       :         p3_3, 2026-10-28, 2026-11-03
-    section Phase 4: 종합 통합 & 시연
-    전체 시스템 온보드 통합 (Core Script) :         p4_1, 2026-11-03, 2026-11-08
-    야외 필드 테스트 & 최종 발표 자료      :         p4_2, 2026-11-08, 2026-11-14
+    section Phase 1 비전
+    비전 코어 (추적·밀집도·기하)        :done,    p1a, 2026-10-10, 2026-10-13
+    카메라 45도 + 미관측 구역 처리       :done,    p1b, 2026-10-15, 2026-10-16
+    현장 임계치 튜닝                    :active,  p1c, 2026-10-16, 2026-10-22
+    section Phase 2 비행
+    측지 변환·안전 가드·상태기계         :done,    p2a, 2026-10-13, 2026-10-14
+    조종사 개입·설정 점검·세션 로그       :done,    p2b, 2026-10-16, 2026-10-16
+    SITL 검증                          :         p2c, 2026-10-17, 2026-10-20
+    Pixhawk 실기 통신                   :         p2d, 2026-10-20, 2026-10-24
+    section Phase 3 기구
+    전원 분배 구축                      :         p3a, 2026-10-20, 2026-10-24
+    기구 방식 결정 및 제작               :crit,    p3b, 2026-10-17, 2026-10-25
+    LED·음성 연동                       :         p3c, 2026-10-25, 2026-11-01
+    section Phase 4 통합
+    지상/기체 분리 구조                  :done,    p4a, 2026-10-13, 2026-10-13
+    페이로드 전개·수축 연동              :done,    p4b, 2026-10-15, 2026-10-15
+    야외 필드 테스트                     :         p4c, 2026-11-03, 2026-11-10
+    최종 발표 자료                       :         p4d, 2026-11-10, 2026-11-14
 ```
 
 ---
 
-### 📍 Phase 1: 비전 인식 및 인구 밀집도 프로토타입 (현재 단계)
-- **목표:** 스마트폰 카메라 스트림을 통해 실시간 군중 카운팅, 히트맵 오버레이 및 과밀집 판정 검증
-- **주요 산출물:**
-  - `vision/detector.py`: YOLOv8n + Foot-point 연산
-  - `vision/density_analyzer.py`: 그리드별 밀집도 & 타겟 좌표 산출
-  - `test_module.py`: 모듈 단위/통합 테스트
-- **완료 기준:** 스마트폰 카메라로 사람 이동 시 과밀집 경보가 정확하게 발생할 것.
+Phase 1 : 비전 인식
+
+목표 : 군중 영상에서 원근 보정된 밀집도(persons/m²)를 산출하고 과밀집 지점의
+기체 기준 좌표를 내보낸다.
+
+완료
+- YOLOv8n + ByteTrack 인물 검출·추적 (프레임 간 ID 유지)
+- 지상 평면 호모그래피 기반 persons/m² 판정
+- 경보 히스테리시스 (단발 오검출이 비행 명령이 되지 않도록)
+- 카메라 45° 기울임 — 수직 하향은 사람이 6.5 px 라 검출 불가
+- 검출 범위 밖 구역을 UNKNOWN 처리 (보이지 않는 곳을 "안전"이라 하지 않음)
+
+남은 것 : [#1](https://github.com/kennykimtang/shepherdron/issues/1) 현장 튜닝,
+[#2](https://github.com/kennykimtang/shepherdron/issues/2) CSI 카메라,
+[#3](https://github.com/kennykimtang/shepherdron/issues/3) Pi 성능 실측
+
+산출물 : [VISION.md](VISION.md)
 
 ---
 
-### 📍 Phase 2: 자율비행 제어 및 MAVLink 통신
-- **목표:** 픽스호크(KOA FC)와 라즈베리파이 간 UART 통신을 확립하고, 과밀집 발생 시 자율 이동 명령 전송
-- **주요 산출물:**
-  - `flight/mavlink_controller.py`: MAVLink 연결, GUIDED 모드 전환, `simple_goto` 비행
-  - SITL 기반 가상 비행 시뮬레이션 환경
-- **완료 기준:** 시뮬레이터 또는 벤치 테스트에서 타겟 GPS 좌표로 드론이 10m 고도로 이동 후 정지 호버링할 것.
+Phase 2 : 자율비행 제어
+
+목표 : 비전이 낸 기체 기준 오프셋을 GPS 좌표로 바꿔 GUIDED 유도 비행하고
+안전하게 복귀한다.
+
+완료
+- 기체 기준 오프셋 ↔ 위경도 변환, 반경 제한 (잘못된 타겟이 기체를 날려보내지 않도록)
+- Pixhawk 연결·모드 전환 검증·arm/takeoff/goto 안전 가드
+- 임무 상태기계 (IDLE → NAVIGATING → HOVERING → RETRACTING → RETURNING)
+- 조종사 수동 전환 시 STANDBY — 조종권을 되찾아가지 않음
+- 설정 정합성 점검, 세션 로그
+
+남은 것 : [#4](https://github.com/kennykimtang/shepherdron/issues/4) SITL 검증,
+[#5](https://github.com/kennykimtang/shepherdron/issues/5) TELEM2 실기 통신,
+정밀 호버링 정확도 측정
+
+산출물 : [FLIGHT.md](FLIGHT.md), [OPERATIONS.md](OPERATIONS.md)
 
 ---
 
-### 📍 Phase 3: 가구부 및 주야간 안내 시스템
-- **목표:** 호버링 도달 신호 수신 시 리니어 액추에이터 전개, 네오픽셀 LED 발광 및 스피커 음성 송출
-- **주요 산출물:**
-  - `hardware/actuator.py`: GPIO 18 PWM 제어 (듀티비 80% 전개 ➔ 0% 고정)
-  - `hardware/indicators.py`: WS2812B 방향 유도 패턴 및 I2S 오디오 경보
-- **완료 기준:** 액추에이터가 250mm 스트로크를 안전하게 전개하고 LED/음성이 정상 작동할 것.
+Phase 3 : 기구부 및 안내 시스템
+
+목표 : 과밀집 지점 도달 시 600 mm 구조물을 전개하고 LED·음성으로 대피를 유도한다.
+
+완료
+- 기구 방식과 무관한 페이로드 추상화 (deploy / retract / is_stowed)
+- 전개 상태로 복귀하지 않도록 RETRACTING 상태 — 접힘 확인 전 RTL 금지
+
+🔴 **이 Phase 의 크리티컬 패스 : 기구 방식 결정**
+([#9](https://github.com/kennykimtang/shepherdron/issues/9))
+
+600 mm 확장은 액추에이터 스트로크로 풀 수 없습니다. 단단 600 mm 액추에이터는
+1,400 g 로 구조물 예산(150 g)의 10배입니다. 윈치 방식이면 80 g 안에 들어옵니다.
+결정 전까지 실제 드라이버를 쓸 수 없으므로 **가장 먼저 정해야 합니다.**
+
+남은 것 : [#7](https://github.com/kennykimtang/shepherdron/issues/7) 전원 분배,
+[#8](https://github.com/kennykimtang/shepherdron/issues/8) 액추에이터 제어,
+[#9](https://github.com/kennykimtang/shepherdron/issues/9) 기구 제작,
+[#10](https://github.com/kennykimtang/shepherdron/issues/10) LED,
+[#11](https://github.com/kennykimtang/shepherdron/issues/11) 음성,
+[#12](https://github.com/kennykimtang/shepherdron/issues/12) 배터리
+
+산출물 : [PAYLOAD.md](PAYLOAD.md), [WIRING.md](WIRING.md)
 
 ---
 
-### 📍 Phase 4: 종합 시스템 통합 & 현장 시연
-- **목표:** 라즈베리파이 4 companion computer에 전체 코드를 적재하고 야외 실증 비행 시연 수행
-- **주요 산출물:**
-  - `shepherdron_core.py`: 비전 + 비행 + 하드웨어 통합 단일 루프
-  - 시연 영상, 최종 보고서 및 발표 슬라이드
+Phase 4 : 통합 및 시연
+
+목표 : 전체를 묶어 야외에서 실증한다.
+
+완료
+- 지상/기체 역할 분리 — 노트북이 YOLO, 기체가 판단·구동
+- 링크는 관측만 나르고 비행 명령은 나르지 않음
+- 링크 끊김 시 기체 단독으로 안전 복귀
+
+남은 것 : [#13](https://github.com/kennykimtang/shepherdron/issues/13) 페이로드 연동·systemd,
+[#14](https://github.com/kennykimtang/shepherdron/issues/14) 발표 자료
+
+산출물 : [ARCHITECTURE.md](ARCHITECTURE.md)
+
+---
+
+팀 결정이 필요한 사항
+
+| # | 내용 | 막고 있는 것 |
+|---|---|---|
+| 1 | **기구 방식** (텔레스코픽 마스트 vs Kresling, 서보 윈치 vs DC+DMD-150) | Phase 3 전체 |
+| 2 | **목표 체공시간** — 2200 mAh 기준 5.3분. 배터리 용량과 페이로드 상한을 역으로 결정 | 배터리 구매 |
+| 3 | **전개 방향** — 아래면 중력이 펴주고, 옆·위면 스프링 필요 | 기구 설계 |
+| 4 | **구조물 질량 150 g 상한** — 초과 시 T/W 1.6 아래로 떨어짐 | 기구 설계 |
