@@ -11,6 +11,10 @@ CrowdPipeline 이 내는 PipelineResult 를 받아 기체를 과밀집 지점으
 **RETRACTING 은 생략할 수 없다.** 600 mm 구조물을 내린 채로 복귀하면 착륙
 자체가 안 된다. 접혔음을 확인하기 전에는 RTL 을 걸지 않는다.
 
+**조종사가 우선이다.** 비행 모드가 임무가 기대하는 값에서 벗어나면 — 즉
+조종기로 수동 전환하면 — 즉시 STANDBY 로 물러나 비행 명령을 일체 내지
+않는다. 조종권을 되찾아가는 자동화는 수동 개입 장치를 무용지물로 만든다.
+
 설계 원칙
   · 상태 전이는 전부 명시적이다. "아마 도착했겠지" 로 다음 단계로 넘어가지 않는다.
   · 링크 끊김·배터리 부족은 어느 상태에서든 FAILSAFE 로 간다.
@@ -37,6 +41,7 @@ class MissionState(str, Enum):
     HOVERING = "HOVERING"         # 도달, 안내 수행 중
     RETRACTING = "RETRACTING"     # 구조물 접는 중 — 접히기 전에는 복귀하지 않는다
     RETURNING = "RETURNING"       # 복귀 중
+    STANDBY = "STANDBY"           # 조종사가 수동 전환 — 임무는 일체 명령하지 않는다
     FAILSAFE = "FAILSAFE"         # 이상 — 더 이상 임무를 수행하지 않는다
 
 
@@ -61,6 +66,16 @@ class MissionStatus:
     elapsed_s: float = 0.0
     reason: str = ""
     missions_completed: int = 0
+
+
+# 각 임무 상태에서 기체가 있어야 할 비행 모드.
+# 여기서 벗어나면 조종사가 개입한 것으로 본다.
+EXPECTED_MODES = {
+    MissionState.NAVIGATING: {"GUIDED"},
+    MissionState.HOVERING: {"GUIDED"},
+    MissionState.RETRACTING: {"GUIDED"},
+    MissionState.RETURNING: {"RTL", "LAND", "GUIDED", "AUTO"},
+}
 
 
 class GuidanceMission:
@@ -114,6 +129,37 @@ class GuidanceMission:
         if self.on_failsafe:
             self.on_failsafe(self, reason)
 
+    def _operator_has_control(self) -> bool:
+        """조종사가 수동 모드로 전환했는가.
+
+        GUIDED 에서는 스틱 입력이 무시되므로, 조종사가 개입하려면 조종기의
+        모드 스위치를 올려야 한다. 따라서 비행 모드가 바뀐 것이 곧 개입 신호다.
+        """
+        expected = EXPECTED_MODES.get(self.state)
+        if expected is None:                   # IDLE / STANDBY / FAILSAFE
+            return False
+        mode = self.ctl.state.mode
+        if not mode or mode == "UNKNOWN":      # 아직 모드를 못 읽었다
+            return False
+        return mode not in expected
+
+    def _stand_down(self, now: float) -> None:
+        """조종권을 넘기고 물러난다. 비행 명령은 일체 내지 않는다."""
+        mode = self.ctl.state.mode
+        self._enter(MissionState.STANDBY, now, f"조종사 수동 전환 ({mode})")
+        log.warning("조종사가 %s 로 전환 — 임무 중단. 비행 명령을 내지 않는다", mode)
+        # 구조물 수축은 비행 제어와 충돌하지 않으므로 접어 둔다 (착륙 대비)
+        if not self.payload.is_stowed:
+            log.warning("구조물이 전개 상태 — 수축 명령만 건다")
+            self._payload_retract(now)
+
+    def _standby(self, result, t: float) -> None:
+        """조종사가 조종 중. 착륙(disarm)하면 대기 상태로 돌아간다."""
+        if not self.ctl.state.armed:
+            self._cooldown_until = t + self.cfg.mission_cooldown_s
+            self.target = None
+            self._enter(MissionState.IDLE, t, "조종사 착륙 — 대기 복귀")
+
     def _payload_call(self, action: str, now: float) -> None:
         fn = getattr(self.payload, action)
         try:
@@ -142,8 +188,14 @@ class GuidanceMission:
         t = now if now is not None else time.monotonic()
         self.payload.update(t)
 
+        # 조종사 개입이 최우선이다. 링크·배터리보다 먼저 본다.
+        if self._operator_has_control():
+            self._stand_down(t)
+            return self.state
+
         # 어느 상태에서든 링크와 배터리를 먼저 본다
-        if self.state not in (MissionState.IDLE, MissionState.FAILSAFE):
+        if self.state not in (MissionState.IDLE, MissionState.FAILSAFE,
+                              MissionState.STANDBY):
             if not self.ctl.is_healthy(t):
                 self._fail(t, "heartbeat 끊김")
                 return self.state
@@ -158,6 +210,7 @@ class GuidanceMission:
             MissionState.HOVERING: self._hovering,
             MissionState.RETRACTING: self._retracting,
             MissionState.RETURNING: self._returning,
+            MissionState.STANDBY: self._standby,
             MissionState.FAILSAFE: lambda *_: None,
         }[self.state]
         handler(result, t)
