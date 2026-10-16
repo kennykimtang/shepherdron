@@ -77,6 +77,22 @@ class SafetyLimits:
     min_satellites: int = 8
     heartbeat_timeout_s: float = 3.0
 
+    def validate(self) -> list[str]:
+        """제한값 정합성 점검. 비행 전에 호출한다."""
+        p: list[str] = []
+        if self.max_radius_m <= 0:
+            p.append(f"max_radius_m={self.max_radius_m} 는 0보다 커야 합니다")
+        if self.min_altitude_m >= self.max_altitude_m:
+            p.append(f"min_altitude_m({self.min_altitude_m}) >= "
+                     f"max_altitude_m({self.max_altitude_m}) — 모든 고도가 거부됩니다")
+        if self.min_altitude_m <= 0:
+            p.append(f"min_altitude_m={self.min_altitude_m} 는 0보다 커야 합니다")
+        if self.heartbeat_timeout_s <= 0:
+            p.append(f"heartbeat_timeout_s={self.heartbeat_timeout_s} 는 0보다 커야 합니다")
+        if not 0 <= self.min_battery_pct <= 100:
+            p.append(f"min_battery_pct={self.min_battery_pct} 는 0~100 이어야 합니다")
+        return p
+
 
 class PreflightError(RuntimeError):
     """사전 점검 실패. 기체를 움직여서는 안 되는 상태."""

@@ -19,7 +19,7 @@ from datetime import datetime
 
 import cv2
 
-from config import VisionConfig
+from config import VisionConfig, validate
 from link import Receiver, Sender, TelemetryReport, VisionReport
 from main import apply_overrides, build_pipeline
 
@@ -55,6 +55,14 @@ def main() -> int:
     print(f"  * 기체 주소     : {args.pi}:{args.vision_port}")
     print(f"  * 텔레메트리    : 0.0.0.0:{args.telemetry_port}")
     print("  * 전송 내용     : 관측 결과만. 비행 명령은 보내지 않음")
+    problems = validate(cfg)
+    if problems:
+        print("  * 설정 점검     : ❌")
+        for pr in problems:
+            print(f"      - {pr}")
+        print("=" * 70)
+        return 1
+    print("  * 설정 점검     : ✅")
     pipeline = build_pipeline(cfg)
     print("=" * 70)
 
