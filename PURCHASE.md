@@ -1,6 +1,6 @@
 추가 구매 목록
 
-작성 : 2026-10-16  ·  기준 : 실내 강당 시연, 4S + AirGear 355 + KoA H743
+갱신 : 2026-10-16  ·  기준 : 실내 강당 시연, 4S + AirGear 355 + KoA H743
 
 이미 산 것과 사기로 한 것을 빼고, **없으면 프로젝트가 성립하지 않는 것만** 추렸습니다.
 
@@ -15,7 +15,8 @@
 | 제어 | KoA FC H743 |
 | 조종 | RadioMaster Pocket (CC2500, 모드2) |
 | 전원 | PT-B2800N-FX50 4S 2800mAh 50C, iMax B6 + 60W PSU |
-| 구매 예정 | Raspberry Pi 4, Camera Module 3 Wide, 5V 3~5A UBEC, USB-TTL 케이블 |
+| 컴퓨팅 | **Raspberry Pi 4** |
+| 구매 예정 | Camera Module 3 Wide, 5V 3~5A UBEC, USB-TTL 케이블 |
 
 ---
 
@@ -24,7 +25,7 @@ A. 없으면 못 납니다
 | # | 품목 | 사양 | 이유 |
 |:-:|---|---|---|
 | A1 | **수신기** | **SBUS 출력** · FrSky **D16** 호환 | 조종기만으로는 기체를 못 움직입니다. **수동 개입 = 유일한 최종 안전장치** |
-| A2 | **microSD 카드** | 32 GB 이상, A1/A2 등급 | Pi OS. 저가 카드는 비행 중 파일시스템이 깨집니다 |
+| A2 | **microSD 카드** | 32 GB 이상, A1/A2 등급 | Pi OS. 본체는 확보했지만 카드는 별도입니다. 저가 카드는 비행 중 파일시스템이 깨집니다 |
 | A3 | **XT60 커넥터 + 실리콘 와이어** | 암수 각 2~3조, 14 AWG / 18 AWG | 배터리·PDB·UBEC 배선. 소모품이라 여유 있게 |
 
 **A1 주의** — RadioMaster Pocket CC2500은 FrSky SPI D8/D16과 S-FHSS를 지원합니다
@@ -51,7 +52,7 @@ C. 안내 기능 = 프로젝트의 목적입니다
 | C2 | **74AHCT125** | 쿼드 레벨 시프터 (DIP) | Pi의 3.3 V는 WS2812B의 VIH(3.5 V) **미달**. 없으면 LED가 간헐 오동작 |
 | C3 | **MAX98357A + 3 W 4 Ω 스피커** | I2S 앰프 모듈 | 음성 안내 ([#11](https://github.com/kennykimtang/shepherdron/issues/11)) |
 | C4 | 470 Ω 저항, 1000 µF / 1000 µF 25 V 콘덴서 | — | LED 보호·돌입전류. [WIRING.md](WIRING.md) §8 |
-| C5 | **페이로드 구동부** | **기구 방식 결정 후** ([#9](https://github.com/kennykimtang/shepherdron/issues/9)) | 윈치 서보 + 텔레스코픽/Kresling 재료. 실내는 600 mm가 사람 머리에 닿아 **300 mm 권장** |
+| C5 | **페이로드 구동부** | **기구 방식 결정 후** ([#9](https://github.com/kennykimtang/shepherdron/issues/9)) | 윈치 서보 + 텔레스코픽/Kresling 재료, 또는 리니어 액추에이터 |
 
 ---
 
@@ -74,7 +75,7 @@ E. 사지 않아도 됩니다 — 이유와 함께
 |---|---|
 | **GPS / 나침반** | 실내 전용이면 쓸 일이 없습니다. 야외 테스트도 할 계획이면 그때 구매 |
 | **텔레메트리 모듈 (433/915 MHz)** | **Pi가 Wi-Fi로 MAVLink를 중계**하므로 별도 무선이 필요 없습니다. Mission Planner를 UDP로 붙이면 됩니다 |
-| **Pi 쿨링 팬** | YOLO를 **노트북이 돌리므로** Pi는 카메라 캡처 + MJPEG 인코딩 + I/O만 합니다. **히트싱크로 충분**합니다 |
+| **Pi 쿨링 팬** | YOLO를 **노트북이 돌리므로** Pi는 카메라 캡처 + MJPEG 인코딩 + I/O만 합니다. **히트싱크로 충분**합니다 (히트싱크는 저가라 같이 사도 무방) |
 | **고성능 컴퓨팅 보드 (젯슨 등)** | 연산이 지상으로 갔습니다. Pi 4로 충분합니다 |
 
 > **텔레메트리 생략의 대가** — Pi가 죽으면 MAVLink 링크도 같이 끊깁니다.

@@ -1,10 +1,10 @@
-# 🚁 Shepherdron 비행 제어 (Phase 2)
+Shepherdron 비행 제어 (Phase 2)
 
 > 비전이 낸 **기체 기준 미터 오프셋** → GPS 좌표 → GUIDED 유도 비행 → 도달 판정 → 복귀
 
 ---
 
-## 1. 비전과의 접점
+1. 비전과의 접점
 
 비전 모듈은 이미 픽셀이 아니라 **기체 기준 미터**를 내보냅니다.
 
@@ -29,13 +29,13 @@ target = target_from_body_offset(
 )
 ```
 
-> ⚠️ **오프셋은 기체 기준이라 매 프레임 다시 재야 합니다.**
+> 주의 **오프셋은 기체 기준이라 매 프레임 다시 재야 합니다.**
 > 한번 잰 오프셋을 기체가 이동한 뒤에도 재사용하면 목표가 함께 움직여
 > 영영 도달하지 못합니다. 실제 비전은 접근할수록 오프셋이 줄어드는 것이 정상입니다.
 
 ---
 
-## 2. 구성
+2. 구성
 
 ```
 flight/
@@ -45,7 +45,7 @@ flight/
 └── sitl_demo.py           SITL 로 전 구간을 돌려보는 실행기
 ```
 
-### 상태기계
+상태기계
 
 ```
  IDLE ─경보─> NAVIGATING ─도달─> HOVERING ─유지─> RETRACTING ─접힘─> RETURNING
@@ -61,7 +61,7 @@ flight/
 
 ---
 
-## 3. 안전 설계
+3. 안전 설계
 
 실제 기체를 움직이는 코드이므로 모든 명령 앞에 가드를 둡니다.
 
@@ -94,11 +94,11 @@ SafetyLimits(
 
 ---
 
-## 4. SITL 시뮬레이션
+4. SITL 시뮬레이션
 
 하드웨어 없이 Phase 2 완료 기준("타겟 좌표로 10 m 고도 이동 후 호버링")을 검증합니다.
 
-### 설치 (최초 1회)
+설치 (최초 1회)
 
 ```bash
 git clone --recurse-submodules https://github.com/ArduPilot/ardupilot.git ~/ardupilot
@@ -106,7 +106,7 @@ cd ~/ardupilot && Tools/environment_install/install-prereqs-mac.sh -y   # Linux:
 . ~/.profile
 ```
 
-### 실행
+실행
 
 ```bash
 # 터미널 1 — 가상 기체 기동 (연세대 신촌 좌표)
@@ -122,7 +122,7 @@ python -m flight.sitl_demo --forward 40 --right -25 --altitude 12
 
 ---
 
-## 5. 실기 연결 (Pixhawk)
+5. 실기 연결 (Pixhawk)
 
 ```python
 from flight import MavlinkController, SafetyLimits
@@ -138,11 +138,11 @@ SERIAL2_PROTOCOL = 2     # MAVLink2
 SERIAL2_BAUD     = 921   # 불안정하면 115
 ```
 
-⚠️ USB-TTL 케이블의 **5 V 선은 연결하지 마세요** — 역급전 위험.
+주의 USB-TTL 케이블의 **5 V 선은 연결하지 마세요** : 역급전 위험.
 
 ---
 
-## 6. 테스트
+6. 테스트
 
 하드웨어도 SITL도 없이 수 초 안에 끝납니다.
 
@@ -160,11 +160,11 @@ pytest tests/test_geodesy.py tests/test_mavlink_controller.py \
 
 ---
 
-## 7. 남은 작업
+7. 남은 작업
 
 - [ ] **[NAV-01]** SITL 설치 후 `flight.sitl_demo` 실제 완주 확인 ([#4](https://github.com/kennykimtang/shepherdron/issues/4))
 - [ ] **[NAV-02]** Pixhawk 실기 TELEM2 통신 및 921600 안정성 확인 ([#5](https://github.com/kennykimtang/shepherdron/issues/5))
 - [x] 전개 상태로 복귀하지 않도록 RETRACTING 상태 추가 ([PAYLOAD.md](PAYLOAD.md))
-- [ ] **[NAV-05]** 정밀 호버링 — 현재는 RTL에 의존, 위치 유지 정확도 측정 필요
+- [ ] **[NAV-05]** 정밀 호버링 : 현재는 RTL에 의존, 위치 유지 정확도 측정 필요
 - [ ] 비전 파이프라인에 `pipeline.set_altitude()`로 기압계 고도를 주입하는 배선
 - [x] 조종기 개입 감지 → `STANDBY` 자동 전환

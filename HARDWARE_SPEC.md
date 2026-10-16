@@ -1,17 +1,17 @@
-# 🔧 Shepherdron 하드웨어 스펙 검증서 (rev.C)
+Shepherdron 하드웨어 스펙 검증서 (rev.C)
 
-> ⚠️ **2026-10-14 실구매로 구성이 바뀌었습니다.** 3S → **4S**, 2212/1045 → **AirGear 355**,
+> 주의 **2026-10-14 실구매로 구성이 바뀌었습니다.** 3S → **4S**, 2212/1045 → **AirGear 355**,
 > Pixhawk 2.4.8 → **KoA H743**. 아래 §0 이 확정 구성이며, 이후 절의 3S 기준 수치는
 > 참고용 이력입니다. 실내 시연 전제는 [INDOOR.md](INDOOR.md) 참조.
 
 ---
 
-## 0. 확정 구매 내역 (2026-10-14, 엑스콥터 ₩312,800)
+0. 확정 구매 내역 (2026-10-14, 엑스콥터 ₩312,800)
 
 | 부품 | 사양 | 질량 |
 |---|---|---:|
 | AirGear 355 모터시스템 | AIR2213 920KV ×4 + AIR20A ESC ×4 + T9545 프로펠러 ×4 | 295 g |
-| F450 프레임 키트 | — | 282 g |
+| F450 프레임 키트 | : | 282 g |
 | Tarot F450/F550 랜딩 스키드 | White | 60 g |
 | RadioMaster Pocket | CC2500, 모드2 | 288 g (지상) |
 
@@ -23,35 +23,35 @@
 | iMax B6 + 5A 60W PSU | 밸런스 충전기 |
 | KoA FC H743 | 국산 범용 픽스호크, KC 인증 |
 
-### 재산정 결과 — 전 항목 개선
+재산정 결과 : 전 항목 개선
 
 | | 이전 (3S + 2212/1045) | **확정 (4S + AirGear 355)** |
 |---|---:|---:|
 | AUW | 1,567 g | **1,463 g** |
-| 추력중량비 | 1.79 ⚠️ | **2.32** ✅ |
+| 추력중량비 | 1.79 주의 | **2.32** OK |
 | 호버 스로틀 | 56% | **43%** |
-| 체공 (80% DoD) | 5.3분 ❌ | **12.1분** ✅ |
+| 체공 (80% DoD) | 5.3분 NG | **12.1분** OK |
 
 *AirGear 355 세트 295 g 은 명세서 실측. AIR2213 은 **3–4S 정격**이라 기존에 지적했던
 "2212 920KV 는 2–3S 정격" 문제가 해소됐습니다. 프로펠러도 1045(10인치)가 아니라
 **T9545(9.5인치)** 입니다.*
 
-### 아직 구매 목록에 없는 것
+아직 구매 목록에 없는 것
 
-> 📋 정리된 구매 목록과 우선순위는 **[PURCHASE.md](PURCHASE.md)** 참조
+> 정리된 구매 목록과 우선순위는 **[PURCHASE.md](PURCHASE.md)** 참조
 
 | 부품 | 비고 |
 |---|---|
 | **수신기** | RadioMaster Pocket CC2500 용 (FrSky D8/D16 호환) |
 | **옵티컬 플로우 + 거리계** | 실내 필수. 없으면 LOITER/GUIDED 불가 ([INDOOR.md](INDOOR.md)) |
 | **프로펠러 가드** | 실내 필수 |
-| Raspberry Pi 4 + Camera Module 3 Wide | |
+| Camera Module 3 Wide | Raspberry Pi 4 본체는 확보 |
 | 5V UBEC, 파워모듈 | |
 | GPS/나침반 | 실내 전용이면 불필요 |
 | 텔레메트리 모듈 | |
 | 페이로드 (기구 + 윈치) | 방식 미결정 ([#9](https://github.com/kennykimtang/shepherdron/issues/9)) |
 
-### KoA H743 — 핀맵 재확인 필요
+KoA H743 : 핀맵 재확인 필요
 
 [WIRING.md](WIRING.md) 의 결선표는 **Pixhawk 2.4.8 기준**입니다. H743 계열은 보드마다
 TELEM 포트 번호가 다릅니다. 제조사 매뉴얼로 아래를 확인하세요.
@@ -76,7 +76,7 @@ TELEM 포트 번호가 다릅니다. 제조사 매뉴얼로 아래를 확인하�
 
 ---
 
-## 1. 우리가 만들려는 것 (기능 사양 확정)
+1. 우리가 만들려는 것 (기능 사양 확정)
 
 | 항목 | 사양 | 근거 |
 |---|---|---|
@@ -93,7 +93,7 @@ TELEM 포트 번호가 다릅니다. 제조사 매뉴얼로 아래를 확인하�
 
 ---
 
-## 2. rev.A에서 발견한 설계 오류 9건
+2. rev.A에서 발견한 설계 오류 9건
 
 | # | 위치 | 문제 | 교정 |
 |:-:|---|---|---|
@@ -109,31 +109,31 @@ TELEM 포트 번호가 다릅니다. 제조사 매뉴얼로 아래를 확인하�
 
 ---
 
-## 3. 확정 부품 스펙 (BOM)
+3. 확정 부품 스펙 (BOM)
 
-### 3-1. 동력계
+3-1. 동력계
 
 | 부품 | 확정 사양 | 수량 | 검증 메모 |
 |---|---|:-:|---|
 | 프레임 | F450 (PDB 일체형 암) | 1 | 282 g |
 | 모터 | 2212 **920KV** BLDC | 4 | 11.1 V·1045 실측 642 g / 9.5 A (제조사 시험값) |
-| 프로펠러 | **1045 × 2, 1045R × 2** | 4 | ⚠️ 정/역 프로펠러를 **반드시 쌍으로** 구매 |
+| 프로펠러 | **1045 × 2, 1045R × 2** | 4 | 주의 정/역 프로펠러를 **반드시 쌍으로** 구매 |
 | ESC | 35 A BLHeli_S (2–4S) | 4 | 모터 최대 ~13 A 대비 2.7배 여유 (과사양이나 안전측) |
 | 배터리 | 3S 11.1 V **2200 mAh** 55C XT60 | 1 | 55C = 121 A 버스트, 전류는 충분. **용량이 부족**(§4) |
-| 파워모듈 | 3DR 타입 홀센서형 | 1 | 5.3 V / **2.25 A** 출력 — FC·GPS·수신기 전용. **Pi 전원으로 쓰면 안 됨** |
+| 파워모듈 | 3DR 타입 홀센서형 | 1 | 5.3 V / **2.25 A** 출력 : FC·GPS·수신기 전용. **Pi 전원으로 쓰면 안 됨** |
 
-### 3-2. 제어·통신계
+3-2. 제어·통신계
 
 | 부품 | 확정 사양 | 연결 | 검증 메모 |
 |---|---|---|---|
-| FC | Pixhawk 2.4.8, ArduCopter 4.x | — | 플래시 2 MB로 기능 축소 빌드만 탑재 가능 |
-| GPS/나침반 | u-blox M8N | `GPS` + I2C | — |
+| FC | Pixhawk 2.4.8, ArduCopter 4.x | : | 플래시 2 MB로 기능 축소 빌드만 탑재 가능 |
+| GPS/나침반 | u-blox M8N | `GPS` + I2C | : |
 | 텔레메트리 | 2.4 GHz 공중 모듈 | `TELEM1` @57600 | 지상 Mission Planner |
 | 수신기 | Microzone MC6C S.BUS | `RC IN` | 상시 수동 개입 경로 |
 | 컴패니언 | Raspberry Pi 4 Model B 2GB | `TELEM2` @921600 | **3.3 V 로직 FTDI** USB-TTL 케이블. 921600이 불안정하면 115200으로 하향 |
 | 카메라 | Camera Module 3 Wide (IMX708) | CSI-2 | **102° 수평 / 120° 대각** FOV, 초점 5 cm~∞ |
 
-### 3-3. 전원 분배 및 페이로드
+3-3. 전원 분배 및 페이로드
 
 | 부품 | 확정 사양 | 전원 | 검증 메모 |
 |---|---|---|---|
@@ -146,9 +146,9 @@ TELEM 포트 번호가 다릅니다. 제조사 매뉴얼로 아래를 확인하�
 
 ---
 
-## 4. 설계 예산 검증
+4. 설계 예산 검증
 
-### 4-1. 질량 예산 — **AUW 1,567 g**
+4-1. 질량 예산 : **AUW 1,567 g**
 
 | 구성 | 질량 | 구성 | 질량 |
 |---|---:|---|---:|
@@ -160,7 +160,7 @@ TELEM 포트 번호가 다릅니다. 제조사 매뉴얼로 아래를 확인하�
 | | | 배선·체결류 | 120 g |
 | | | **합계** | **1,567 g** |
 
-### 4-2. 추력 마진 — **T/W 1.79 : 1** ⚠️
+4-2. 추력 마진 : **T/W 1.79 : 1** 주의
 
 ```
 정지추력  = 4 × 700 g  = 2,800 g      (1045 @ 11.1V, 보수적 추정)
@@ -172,19 +172,19 @@ TELEM 포트 번호가 다릅니다. 제조사 매뉴얼로 아래를 확인하�
 → **오리가미 구조물 질량을 150 g 이하로 묶어주세요.** 이를 넘기면 T/W가 1.6 아래로 떨어지고
 바람 속에서 자세 제어 권한(attitude authority)이 급격히 나빠집니다.
 
-### 4-3. 체공 시간 — **현 구성 5.3분** ❌
+4-3. 체공 시간 : **현 구성 5.3분** NG
 
 호버 전류 = 모터 17.8 A + 전장 2.0 A = **19.8 A**
 
 | 배터리 | AUW | T/W | 호버 전류 | 체공(DoD 80%) | 평가 |
 |---|---:|---:|---:|---:|---|
-| 2200 mAh (현 사양) | 1,567 g | 1.79 | 19.8 A | **5.3 분** | ❌ 임무 수행 불가 |
-| **3300 mAh (권장)** | 1,637 g | 1.71 | 20.6 A | **7.7 분** | ✅ 추력·체공 균형점 |
-| 5000 mAh | 1,762 g | 1.59 | 22.0 A | 10.9 분 | ⚠️ 추력 마진 부족 |
+| 2200 mAh (현 사양) | 1,567 g | 1.79 | 19.8 A | **5.3 분** | NG 임무 수행 불가 |
+| **3300 mAh (권장)** | 1,637 g | 1.71 | 20.6 A | **7.7 분** | OK 추력·체공 균형점 |
+| 5000 mAh | 1,762 g | 1.59 | 22.0 A | 10.9 분 | 주의 추력 마진 부족 |
 
 > **권장:** 3S **3300 mAh**로 교체. 2200 mAh는 예비/벤치 테스트용으로 유지.
 
-### 4-4. 5 V UBEC 전원 예산 — **3.15 A / 5.0 A (63%)** ✅
+4-4. 5 V UBEC 전원 예산 : **3.15 A / 5.0 A (63%)** OK
 
 | 부하 | 전류 |
 |---|---:|
@@ -194,13 +194,13 @@ TELEM 포트 번호가 다릅니다. 제조사 매뉴얼로 아래를 확인하�
 | 74AHCT125 외 | 0.05 A |
 | **합계 피크** | **3.15 A** |
 
-⚠️ LED를 60개로 늘리거나 밝기 상한을 풀면 **5 A를 초과해 Pi가 리부팅**됩니다. 코드에서 상한을 강제하세요.
+주의 LED를 60개로 늘리거나 밝기 상한을 풀면 **5 A를 초과해 Pi가 리부팅**됩니다. 코드에서 상한을 강제하세요.
 
 ---
 
-## 5. 결선표 (조립 가이드)
+5. 결선표 (조립 가이드)
 
-### 5-1. Pixhawk 2.4.8
+5-1. Pixhawk 2.4.8
 
 | 포트 | 연결 대상 | 케이블 | 비고 |
 |---|---|---|---|
@@ -226,14 +226,14 @@ MOT_BAT_VOLT_MAX = 12.6   # 3S
 MOT_BAT_VOLT_MIN = 9.9    # 3S
 ```
 
-### 5-2. Raspberry Pi 4 — **핀맵 확정본**
+5-2. Raspberry Pi 4 : **핀맵 확정본**
 
 | 기능 | BCM | 물리핀 | 연결 대상 | 비고 |
 |---|:-:|:-:|---|---|
-| 5 V 전원 | — | 2 | UBEC 5 V | 인라인 3 A 퓨즈 권장 (GPIO 급전은 Pi 내부 폴리퓨즈를 우회) |
-| GND | — | 6, 9, 14… | 공통 접지 | PDB 스타 그라운드 |
-| 카메라 | — | CSI | Camera Module 3 Wide | 200 mm FPC |
-| MAVLink | — | USB-A | Pixhawk `TELEM 2` | 3.3 V FTDI |
+| 5 V 전원 | : | 2 | UBEC 5 V | 인라인 3 A 퓨즈 권장 (GPIO 급전은 Pi 내부 폴리퓨즈를 우회) |
+| GND | : | 6, 9, 14… | 공통 접지 | PDB 스타 그라운드 |
+| 카메라 | : | CSI | Camera Module 3 Wide | 200 mm FPC |
+| MAVLink | : | USB-A | Pixhawk `TELEM 2` | 3.3 V FTDI |
 | **액추에이터 PWM** | **GPIO 13** | 33 | 74AHCT125 → DMD-150 PWM | PWM1 채널 (I2S와 비충돌) |
 | **액추에이터 DIR** | **GPIO 6** | 31 | 74AHCT125 → DMD-150 DIR | 전개/수축 방향 |
 | **LED 데이터** | **GPIO 10** | 19 | 74AHCT125 → WS2812B DIN | SPI0 MOSI 구동, root 불필요 |
@@ -241,7 +241,7 @@ MOT_BAT_VOLT_MIN = 9.9    # 3S
 | I2S LRCLK | GPIO 19 | 35 | MAX98357A LRC | 〃 |
 | I2S DIN | GPIO 21 | 40 | MAX98357A DIN | 〃 |
 
-### 5-3. 전력 분배
+5-3. 전력 분배
 
 | 라인 | 시작 | 끝 | 전압 |
 |---|---|---|---|
@@ -253,14 +253,14 @@ MOT_BAT_VOLT_MIN = 9.9    # 3S
 
 ---
 
-## 6. 조립 전 필수 체크리스트
+6. 조립 전 필수 체크리스트
 
 - [ ] **모든 GND를 PDB 한 점(star ground)에 모을 것.** Pi·DMD-150·Pixhawk·UBEC 접지가 분리되면 PWM 신호가 뜹니다.
 - [ ] PDB 입력단에 **470 µF / 25 V 저ESR 콘덴서** 장착 (ESC 스위칭 서지 흡수).
 - [ ] UBEC 5 V 레일에 **1000 µF** 벌크 콘덴서 (LED 돌입전류 흡수).
 - [ ] WS2812B **DIN에 470 Ω 직렬저항**.
 - [ ] USB-TTL 케이블의 **5 V 선은 절연 처리**.
-- [ ] 프로펠러 **정/역 방향 확인** — 1045R은 M1·M2(CCW), 1045는 M3·M4(CW).
+- [ ] 프로펠러 **정/역 방향 확인** : 1045R은 M1·M2(CCW), 1045는 M3·M4(CW).
 - [ ] 첫 시동은 **반드시 프로펠러를 제거**하고 모터 회전 방향만 확인.
 - [ ] 파워모듈 5.3 V 레일에 Pi를 물리지 말 것 (2.25 A 한계).
 - [ ] 액추에이터 전개 시험은 **기체를 고정한 상태**에서 (120 N 반력이 기체를 밀어냄).
@@ -268,21 +268,21 @@ MOT_BAT_VOLT_MIN = 9.9    # 3S
 
 ---
 
-## 7. 남은 미확정 항목
+7. 남은 미확정 항목
 
-1. **목표 체공시간** — 팀 확정 필요. 배터리 용량과 페이로드 상한을 결정합니다.
-2. **오리가미 구조물 실측 질량** — 150 g 가정치. 실측 후 §4-2 재계산 필요.
-3. **전개 필요 추력** — 120 N 가정. Kresling 구조 시작품으로 실측 권장.
-4. **LMB2036U 250 mm 대안** — 링크 증폭 / 2단 직렬 / 타 시리즈 중 택일.
-5. **DMD-150 단자 배열** — 제조사 데이터시트 원본 미확보. MotorBank 기술상담으로 PWM·DIR 단자명 확인 필요.
+1. **목표 체공시간** : 팀 확정 필요. 배터리 용량과 페이로드 상한을 결정합니다.
+2. **오리가미 구조물 실측 질량** : 150 g 가정치. 실측 후 §4-2 재계산 필요.
+3. **전개 필요 추력** : 120 N 가정. Kresling 구조 시작품으로 실측 권장.
+4. **LMB2036U 250 mm 대안** : 링크 증폭 / 2단 직렬 / 타 시리즈 중 택일.
+5. **DMD-150 단자 배열** : 제조사 데이터시트 원본 미확보. MotorBank 기술상담으로 PWM·DIR 단자명 확인 필요.
 
 ---
 
-### 출처
+출처
 
-- [MotorBank — 양방향 DC모터 컨트롤러 DMD-150 (6.5~40V / 15A / 360W / 53g / 5V TTL)](https://www.motorbank.kr/goods/goods_view.php?goodsNo=1000009128)
-- [MotorBank — LMB2036U 리니어 액추에이터 (DC 6/12/24V, 30·60·120N, 스트로크 30~150mm)](https://www.motorbank.kr/goods/goods_view.php?goodsNo=1000034633)
-- [Funduinoshop — 2212 920KV 벤치 데이터 (11.1V / 1045 / 9.5A / 642g / 105W)](https://funduinoshop.com/en/electronic-modules/electric-motors-and-accessories/brushless-motors/2212-brushless-motor-920kv-cw-sliver)
-- [PiShop — Raspberry Pi Camera Module 3 Wide (IMX708, 102° H / 120° D)](https://www.pishop.us/product/raspberry-pi-camera-module-3-wide/)
-- [Q-engineering — YOLOv8 NCNN 벤치마크 (nano @640: RPi4 3.1 FPS)](https://awesome.ecosyste.ms/projects/github.com%2Fqengineering%2Fyolov8-ncnn-raspberry-pi-4)
-- [Adafruit / 커뮤니티 — WS2812B VIH = 0.7×VDD, 74AHCT125 레벨 시프트 권장](https://forum.arduino.cc/t/level-shifter-for-ws2812b-led/1040966)
+- [MotorBank : 양방향 DC모터 컨트롤러 DMD-150 (6.5~40V / 15A / 360W / 53g / 5V TTL)](https://www.motorbank.kr/goods/goods_view.php?goodsNo=1000009128)
+- [MotorBank : LMB2036U 리니어 액추에이터 (DC 6/12/24V, 30·60·120N, 스트로크 30~150mm)](https://www.motorbank.kr/goods/goods_view.php?goodsNo=1000034633)
+- [Funduinoshop : 2212 920KV 벤치 데이터 (11.1V / 1045 / 9.5A / 642g / 105W)](https://funduinoshop.com/en/electronic-modules/electric-motors-and-accessories/brushless-motors/2212-brushless-motor-920kv-cw-sliver)
+- [PiShop : Raspberry Pi Camera Module 3 Wide (IMX708, 102° H / 120° D)](https://www.pishop.us/product/raspberry-pi-camera-module-3-wide/)
+- [Q-engineering : YOLOv8 NCNN 벤치마크 (nano @640: RPi4 3.1 FPS)](https://awesome.ecosyste.ms/projects/github.com%2Fqengineering%2Fyolov8-ncnn-raspberry-pi-4)
+- [Adafruit / 커뮤니티 : WS2812B VIH = 0.7×VDD, 74AHCT125 레벨 시프트 권장](https://forum.arduino.cc/t/level-shifter-for-ws2812b-led/1040966)

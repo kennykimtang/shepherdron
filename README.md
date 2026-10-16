@@ -63,7 +63,7 @@ pytest tests/ -v
  └──────────────────────────────┬───────────────────────────────┘
                                 │  forward_m / right_m (기체 기준)
  ┌─ 비행 (Phase 2 · 코어 완료) ──▼───────────────────────────────┐
- │  Raspberry Pi 4 ─ MAVLink2 ─ Pixhawk 2.4.8 ─ GUIDED goto     │
+ │  Raspberry Pi 4 ─ MAVLink2 ─ KoA H743 ─ GUIDED goto     │
  └──────────────────────────────┬───────────────────────────────┘
                                 │  호버링 도달 신호
  ┌─ 기구 (Phase 3) ─────────────▼───────────────────────────────┐
@@ -73,9 +73,9 @@ pytest tests/ -v
 
 | 항목 | 사양 |
 |---|---|
-| 기체 | F450 쿼드 X · 2212 920KV ×4 · 1045/1045R |
-| 전원 | 3S 11.1 V · AUW 1,567 g · T/W 1.79:1 · 체공 5.3분 (3300 mAh 권장) |
-| 제어 | Pixhawk 2.4.8 (ArduCopter 4.x) + Raspberry Pi 4 2GB |
+| 기체 | F450 쿼드 X · AIR2213 920KV ×4 · T9545/T9545R |
+| 전원 | 4S 14.8 V · AUW 1,463 g · T/W 2.32:1 · 체공 5.3분 (3300 mAh 권장) |
+| 제어 | KoA H743 (ArduCopter 4.x) + Raspberry Pi 4 2GB |
 | 인지 | Camera Module 3 Wide (102° H) · YOLOv8n NCNN 320px ≈ 8–10 FPS |
 
 ---
