@@ -45,7 +45,7 @@ BT1  4S LiPo 14.8 V 2800 mAh
     │
     PM1  Power Module
      ├─[W02] 6p molex ──→ FC1 POWER (5.3 V)
-     │                     └ FC1 + GPS1 + TM1 + RX1 전용  ⚠ PC1 금지
+     │                     └ FC1 + GPS1 + TM1 + RX1 전용  ! PC1 금지
      │
      └─[W03] 12 AWG ────→ PDB1  F450 PDB  ★ STAR GROUND
                            │     470 µF / 25 V 저ESR 콘덴서 (입력 패드)
@@ -56,14 +56,14 @@ BT1  4S LiPo 14.8 V 2800 mAh
                            ├─[W13] 16 AWG ────→ U1  UBEC 5 V / 5 A
                            │                     │
                            │                     ├─[W15] 18 AWG → PC1  J8-2 / J8-6
-                           │                     │                ⚠ 인라인 3 A 퓨즈
+                           │                     │                ! 인라인 3 A 퓨즈
                            │                     ├─[W16] 18 AWG → U4 Vcc, LED1 Vcc
                            │                     │                (LED1에 1000 µF)
                            │                     └─[W17] 22 AWG → U2 Vin
                            │
                            └─[W14] 16 AWG ────→ U3 Vcc (DMD-150)
                                                  └─[W28]→ M5 액추에이터
-                                                 ⚠ 5 V 레일에서 절대 금지
+                                                 ! 5 V 레일에서 절대 금지
 ```
 
 **5 V 레일 부하 (U1 기준 5.00 A 중 3.15 A, 63%)**
@@ -88,7 +88,7 @@ U4 외                    0.05 A
                         ├─[W05..W08] MAIN OUT 1-4 ─→ ESC1..ESC4 (3p 서보선)
                         └─[W12] TELEM2 ⇄ PC1 USB-A
                                  USB-TTL, 3.3 V FTDI, 921600 bps
-                                 ⚠ 5 V 선은 연결하지 말 것 (역급전)
+                                 ! 5 V 선은 연결하지 말 것 (역급전)
 
   CAM1 ─[W18] CSI-2 15p FPC 200 mm ─→ PC1
 
