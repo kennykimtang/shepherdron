@@ -25,7 +25,7 @@
 | KoA FC H743 (KC 인증) | QA92258 | **예약판매** : 배송 일정 확인 필요 |
 | PT-B2800N-FX50 4S 2800mAh 50C XT60 | QA41869 | |
 | iMax B6 충전기 + 5A 60W PSU (KC) | QQ98187 | |
-| RadioMaster R86C V2 수신기 | | FrSky D8/D16/S-FHSS, 6채널 |
+| RadioMaster R86C V2 수신기 | | FrSky D8/D16/S-FHSS · PWM 6ch / SBUS 8ch · **CC2500 조종기와 호환 확인** |
 | UBEC 5A 레귤레이터 (입력 5~30V / 출력 5V 5A) | | |
 | XT60 연장 케이블 16AWG 30cm | | |
 | XT60 전원케이블 12AWG 10cm | | |
