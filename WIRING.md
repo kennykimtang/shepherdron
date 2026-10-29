@@ -40,7 +40,14 @@ FC·수신기·GPS/나침반·옵티컬플로우까지 공급합니다. 전류 �
 
 ---
 
-> [shepherdron_wiring_diagram.png](shepherdron_wiring_diagram.png)와 **동일한 내용**을 텍스트로 옮긴 것입니다.
+조립 설명서 도면
+
+| 장 | 내용 |
+|---|---|
+| [1장 : 부품 배치와 전원](manual_sheet1_power.png) | F450 상면 배치, 전원 계통, 조립 순서 12단계 |
+| [2장 : 신호와 설정](manual_sheet2_signal.png) | KoA FC 커넥터 핀아웃, 신호 결선, ArduPilot 파라미터, 비행 전 점검 |
+
+아래 텍스트는 같은 내용을 grep·diff 가능한 형태로 옮긴 것입니다.
 > 부품 기호(BT1, U3 …)와 배선 번호(W01 …)는 도면과 1:1로 같습니다.
 > 수치 근거는 [HARDWARE_SPEC.md](HARDWARE_SPEC.md) 참조.
 

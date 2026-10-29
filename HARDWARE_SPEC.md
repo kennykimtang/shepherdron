@@ -94,7 +94,9 @@ LOITER / GUIDED 진입 자체가 막힙니다. GPS + 나침반 일체형 모듈�
 > **이 문서의 목적:** rev.A 배선도(`shepherdron_master_blueprint.png`)에 포함된 **9건의 설계 오류를 교정**하고,
 > 부품별 정격을 1차 출처로 재확인한 뒤 **질량·추력·전류·전원 예산을 수치로 검증**하는 것.
 
-![Shepherdron 시스템 결선도 rev.B](shepherdron_wiring_diagram.png)
+![Shepherdron 조립 설명서 1장](manual_sheet1_power.png)
+
+![Shepherdron 조립 설명서 2장](manual_sheet2_signal.png)
 
 > 위 도면은 `generate_wiring_diagram.py`로 생성됩니다. 각 배선에는 **W## 번호**가 붙어 있고,
 > 도면 하단 **WIRE SCHEDULE**에 출발점·도착점·전선 규격·주의사항이 1:1로 대응됩니다.
