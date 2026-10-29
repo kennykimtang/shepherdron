@@ -1,9 +1,44 @@
 Shepherdron 결선 명세 (텍스트판, rev.B)
 
-> 주의 : 부품 표기는 2026-10-14 실구매분(4S + AirGear 355 + KoA H743)으로 갱신했습니다.
-> 다만 **결선 구조와 핀 번호는 Pixhawk 2.4.8 기준으로 작성된 것**이라, KoA H743 의
-> TELEM 포트 번호와 커넥터 규격은 **제조사 매뉴얼로 반드시 확인**해야 합니다.
+> KoA FC 공식 매뉴얼로 핀맵을 확정했습니다 (2026-10-29).
 > 실내 시연 전제는 [INDOOR.md](INDOOR.md), 확정 부품은 [HARDWARE_SPEC.md](HARDWARE_SPEC.md) 0절.
+
+KoA FC 커넥터 핀아웃 (공식)
+
+| 커넥터 | 핀 배열 | 용도 |
+|---|---|---|
+| **POWER** 6핀 | 5V, 5V, Curr, Vbat, GND, GND | **VBAT 최대 26 V 직접 입력.** XT60 으로 PDB 직결 가능 |
+| **PWM** 10핀 | GND, PWM8/BUZZER, PWM7~PWM1, 5V | 8채널, 전 채널 BDShot. 8번은 부저 |
+| **RC** 4핀 | GND, RX5/SBUS IN, TX5, **5V** | SBUS 입력 + 수신기 급전 |
+| **GPS** 6핀 | GND, SDA, SCL, RX1, TX1, 5V | UART + I2C(나침반) |
+| TELEM1 / TELEM2 | 표준 MAVLink 시리얼 | TELEM2 를 라즈베리파이에 연결 |
+
+UART 매핑 (ArduPilot)
+
+| SERIAL | UART | 포트 |
+|---|---|---|
+| SERIAL 0 | USB | — |
+| SERIAL 1 | UART 2 | TELEM1 |
+| **SERIAL 2** | UART 4 | **TELEM2** → 라즈베리파이 |
+| SERIAL 3 | UART 1 | GPS / 나침반 |
+| SERIAL 4 | UART 3 | Digital FPV (여유) |
+| SERIAL 5 | UART 7 | ESC 텔레메트리 (여유) |
+| **SERIAL 6** | UART 5 | **RC** → R86C V2 SBUS |
+| SERIAL 7 | UART 8 | DEBUG |
+
+전원 구조 : **파워모듈 불필요**
+
+KoA FC 는 VBAT 단자로 배터리를 직접 받고(최대 26 V) **5 V 2.5 A BEC 를 내장**해
+FC·수신기·GPS/나침반·옵티컬플로우까지 공급합니다. 전류 측정이 꼭 필요할 때만
+별도 파워모듈(Holybro PM02 V3 / PM06 / PM07 호환)을 답니다.
+
+**라즈베리파이는 별도 UBEC 에서 급전**합니다. FC 의 5 V BEC 2.5 A 는 이미
+수신기·나침반·플로우가 쓰고 있어 Pi 의 3 A 를 감당하지 못합니다.
+
+주의 : **USB 는 BEC 회로와 분리**돼 있어 USB 만 연결하면 외부기기에 전원이
+가지 않습니다. 벤치 테스트 때도 배터리를 함께 연결해야 합니다.
+
+---
 
 > [shepherdron_wiring_diagram.png](shepherdron_wiring_diagram.png)와 **동일한 내용**을 텍스트로 옮긴 것입니다.
 > 부품 기호(BT1, U3 …)와 배선 번호(W01 …)는 도면과 1:1로 같습니다.
@@ -18,8 +53,8 @@ Shepherdron 결선 명세 (텍스트판, rev.B)
 | `BT1` | 4S LiPo 배터리 | 14.8 V · 2800 mAh · 50C · XT60 · 약 300 g |
 | `PM1` | 파워모듈 (3DR 타입) | 14.8 V 패스스루 + 5.3 V / **2.25 A** 레귤레이터 |
 | `PDB1` | F450 PDB | 14.8 V 분배 버스 · **★ 스타 그라운드 집결점** |
-| `FC1` | KoA H743 | ArduCopter 4.x · Quad X · 핀맵은 제조사 매뉴얼 확인 |
-| `GPS1` | u-blox M8N | GPS + 나침반 |
+| `FC1` | KoA FC H743 | ArduCopter 4.x · Quad X · 5V 2.5A BEC 내장 · 나침반 없음 |
+| `MAG1` | GPS + 나침반 모듈 | **FC 에 나침반이 없어 필수.** 실내에서는 나침반만 사용 |
 | `TM1` | 2.4 GHz 텔레메트리 | 지상 Mission Planner · 57 600 bps |
 | `RX1` | Microzone MC6C 수신기 | S.BUS · 비상 수동 조종 |
 | `ESC1~4` | 35 A BLHeli_S | 2–4S · opto PWM 입력 |
@@ -124,8 +159,9 @@ U4 외                    0.05 A
 ```
 FRAME_CLASS       1      multicopter
 FRAME_TYPE        1      quad X
-SERIAL2_PROTOCOL  2      MAVLink2
+SERIAL2_PROTOCOL  2      MAVLink2   (TELEM2 = UART4)
 SERIAL2_BAUD      921    불안정 시 115
+SERIAL6_PROTOCOL  23     RC Input   (RC 포트 = UART5)
 BRD_SAFETYENABLE  1
 BATT_MONITOR      4      전압 + 전류
 MOT_BAT_VOLT_MAX  12.6   3S

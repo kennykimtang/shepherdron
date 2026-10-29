@@ -62,23 +62,30 @@ ESC 는 **개별 4개**입니다 (4-in-1 아님). 판매처 사양의 치수 53 
 
 | 부품 | 비고 |
 |---|---|
-| **수신기** | RadioMaster Pocket CC2500 용 (FrSky D8/D16 호환) |
+| ~~수신기~~ | **발주 완료** : RadioMaster R86C V2 (SBUS 8채널) |
 | **옵티컬 플로우 + 거리계** | 실내 필수. 없으면 LOITER/GUIDED 불가 ([INDOOR.md](INDOOR.md)) |
 | **프로펠러 가드** | 실내 필수 |
 | Camera Module 3 Wide | Raspberry Pi 4 본체는 확보 |
-| 5V UBEC, 파워모듈 | |
-| GPS/나침반 | 실내 전용이면 불필요 |
+| 5V UBEC | 발주 완료. 파워모듈은 불필요 (FC 내장 BEC) |
+| **GPS + 나침반** | **필수.** FC 에 나침반이 없어 실내에서도 yaw 추정에 필요 |
 | 텔레메트리 모듈 | |
 | 페이로드 (기구 + 윈치) | 방식 미결정 ([#9](https://github.com/kennykimtang/shepherdron/issues/9)) |
 
-KoA H743 : 핀맵 재확인 필요
+KoA FC H743 : 사양 확정 (공식 매뉴얼)
 
-[WIRING.md](WIRING.md) 의 결선표는 **Pixhawk 2.4.8 기준**입니다. H743 계열은 보드마다
-TELEM 포트 번호가 다릅니다. 제조사 매뉴얼로 아래를 확인하세요.
+| 항목 | 내용 |
+|---|---|
+| 전원 | **VBAT 최대 26 V 직접 입력**, XT60 으로 PDB 직결 가능 |
+| BEC | **5 V 2.5 A 내장** → 파워모듈 불필요. 전류 측정 시에만 외장 모듈 |
+| UART | 7개. SERIAL2 = TELEM2 (라즈베리파이), SERIAL6 = RC (SBUS) |
+| PWM | 8채널 BDShot, 8번 채널 부저 |
+| 센서 | BMI088 ×2, SPA06-003 기압계, **나침반 없음** |
+| 저장 | Micro SD 8 GB 포함 (비행 로그) |
 
-- `TELEM2` 에 해당하는 SERIAL 번호와 물리 커넥터
-- 전원 입력 방식 (파워모듈 커넥터 규격)
-- 2.4.8 의 2 MB 플래시 제약이 없어 ArduCopter 전체 기능 사용 가능
+**나침반이 없습니다.** ArduPilot 의 EKF 는 yaw 추정에 나침반이나 GPS 중 하나가
+필요한데, 실내에는 GPS 가 없으므로 **외장 나침반이 필수**입니다. 없으면
+LOITER / GUIDED 진입 자체가 막힙니다. GPS + 나침반 일체형 모듈을 사서
+실내에서는 나침반만 쓰면 됩니다.
 
 ---
 

@@ -101,15 +101,15 @@ ax.text(106, 1972, "1 · PROPULSION & FLIGHT CONTROL", fontsize=12, fontweight="
 comp(110, 1780, 250, 150, "BT1", "4S LiPo",
      ("14.8 V  2800 mAh  50C", "XT60  ·  approx 300 g", "140 A burst"), accent="#4C4FB0")
 comp(460, 1780, 250, 150, "PM1", "Power module",
-     ("in  14.8 V from BT1", "out 14.8 V to PDB1", "VERIFY: H743 may sense"), accent=V53)
+     ("OPTIONAL for 4S", "FC VBAT takes 26 V", "fit only for current", "sensing"), accent=V53)
 comp(460, 1430, 250, 280, "PDB1", "F450 PDB",
      ("14.8 V distribution bus", "470 uF / 25 V low-ESR", "across the input pads",
       "", "★  STAR GROUND", "all returns bond here"), accent=V11)
 node(600, 1430, GNDC); ground(600, 1430, 20)
 
-comp(810, 1870, 200, 100, "OF1", "3901-L0X", ("INDOOR: no GPS", "flow = EK3_SRC1_VELXY 5"))
-comp(1050, 1870, 200, 100, "TM1", "Telemetry", ("2.4 GHz air unit", "57 600 bps"), accent=V50)
-comp(1290, 1870, 210, 100, "RX1", "MC6C RX", ("S.BUS receiver", "manual override"), accent=SER)
+comp(810, 1870, 200, 100, "OF1", "flow+range", ("5 V from FC BEC", "EK3_SRC1_VELXY = 5"))
+comp(1050, 1870, 200, 100, "MAG1", "Compass", ("FC has NO compass", "external REQUIRED"), accent=V50)
+comp(1290, 1870, 210, 100, "RX1", "R86C V2", ("SBUS to RC port", "5 V from FC"), accent=SER)
 
 fcx, fcy, fcw, fch = 790, 1320, 710, 480
 ax.add_patch(patches.Rectangle((fcx, fcy), fcw, fch, fc="#FFFFFF", ec=INK, lw=2.1, zorder=6))
@@ -124,33 +124,33 @@ ax.text(fcx+26, fcy+255,
         "PARAMETERS\n"
         "  FRAME_CLASS       1     multicopter\n"
         "  FRAME_TYPE        1     quad X\n"
-        "  SERIAL2_PROTOCOL  2     MAVLink2\n"
+        "  SERIAL2_PROTOCOL  2     TELEM2=UART4\n"
         "  SERIAL2_BAUD      921   fallback 115\n"
-        "  BRD_SAFETYENABLE  1\n"
+        "  SERIAL6_PROTOCOL  23    RC IN=UART5\n"
         "  BATT_MONITOR      4     volt + current\n"
         "  MOT_BAT_VOLT_MAX  16.8   4S\n"
         "  MOT_BAT_VOLT_MIN  13.2   4S",
         fontsize=8.7, color=INK, va="top", family="monospace", zorder=8)
 ground(1180, fcy+16, 0)
 
-pin(fcx, 1700, V53, "POWER 6p", "right")
+pin(fcx, 1700, V11, "POWER 6p  VBAT<=26V", "right")
 for xx, col in ((890, SIG), (1150, V50), (1390, SER)):
     pin(xx, fcy+fch, col)
 pin(1300, fcy, SER)
 ax.text(890, 1812, "flow + range", fontsize=8.2, color=INK, ha="center", va="bottom", zorder=9)
-ax.text(1150, 1812, "TELEM1 6p", fontsize=8.2, color=INK, ha="center", va="bottom", zorder=9)
-ax.text(1390, 1812, "RC IN 3p", fontsize=8.2, color=INK, ha="center", va="bottom", zorder=9)
-ax.text(1316, 1332, "TELEM2 6p", fontsize=8.2, color=INK, va="bottom", zorder=9)
+ax.text(1150, 1812, "GPS port I2C", fontsize=8.2, color=INK, ha="center", va="bottom", zorder=9)
+ax.text(1390, 1812, "RC port SBUS", fontsize=8.2, color=INK, ha="center", va="bottom", zorder=9)
+ax.text(1316, 1332, "TELEM2 = SERIAL2", fontsize=8.2, color=INK, va="bottom", zorder=9)
 for i, yy in enumerate((1740, 1620, 1500, 1380)):
     pin(fcx+fcw, yy, V11, f"MAIN OUT {i+1}", "left")
 
-esc_rows = [(1690, "ESC1", "M1", "front-right", "CCW", "T9545R"),
-            (1570, "ESC2", "M2", "rear-left",   "CCW", "T9545R"),
-            (1450, "ESC3", "M3", "front-left",  "CW",  "T9545"),
-            (1330, "ESC4", "M4", "rear-right",  "CW",  "T9545")]
+esc_rows = [(1690, "ESC1", "M1", "front-right", "CCW", "MF9545 R"),
+            (1570, "ESC2", "M2", "rear-left",   "CCW", "MF9545 R"),
+            (1450, "ESC3", "M3", "front-left",  "CW",  "MF9545"),
+            (1330, "ESC4", "M4", "rear-right",  "CW",  "MF9545")]
 for y, eref, mref, pos, rot, prop in esc_rows:
     comp(1700, y, 270, 100, eref, "AIR 20A V2", ("3-4S  ·  AirGear 355 set",), accent="#5A6676")
-    comp(2060, y, 420, 100, mref, f"AIR2213 920KV  ·  {pos}",
+    comp(2060, y, 420, 100, mref, f"AIR2213 KV1000  ·  {pos}",
          (f"rotation {rot}      propeller {prop}",), accent=PHASE)
 
 # ═══════════════════ ZONE 2 · COMPANION + MISSION PAYLOAD ═══════════════════
@@ -228,7 +228,7 @@ comp(2210, 660, 340, 150, "LS1", "Speaker 3W 4ohm",
 
 # ───────────────────────────── conductors ─────────────────────────────
 wire([(360, 1855), (460, 1855)], V11, 4.2);            wid(410, 1866, "W01", V11)
-wire([(710, 1700), (790, 1700)], V53, 2.6);            wid(750, 1711, "W02", V53)
+wire([(710, 1700), (790, 1700)], V11, 2.6);            wid(750, 1711, "W02", V11)
 wire([(585, 1780), (585, 1710)], V11, 4.2);            wid(597, 1745, "W03", V11, ha="left", va="center")
 # W04 main bus to the ESCs (hops the W12 serial drop)
 wire([(650, 1430), (650, 1305), (1832, 1305), (1832, 1330)], V11, 4.2,
@@ -317,8 +317,8 @@ ax.text(cx, cy, "FC1", fontsize=8.4, fontweight="bold", color=INK, ha="center",
 ax.annotate("", xy=(cx, cy+r+54), xytext=(cx, cy+36),
             arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.8), zorder=9)
 ax.text(cx+12, cy+r+44, "FWD", fontsize=9, fontweight="bold", color=INK, zorder=9)
-for sx, sy, ref, rot, prop in ((1, 1, "M1", "CCW", "T9545R"), (-1, -1, "M2", "CCW", "T9545R"),
-                               (-1, 1, "M3", "CW", "T9545"), (1, -1, "M4", "CW", "T9545")):
+for sx, sy, ref, rot, prop in ((1, 1, "M1", "CCW", "MF9545 R"), (-1, -1, "M2", "CCW", "MF9545 R"),
+                               (-1, 1, "M3", "CW", "MF9545"), (1, -1, "M4", "CW", "MF9545")):
     mx, my = cx + sx*r, cy + sy*r
     ax.plot([cx, mx], [cy, my], color=INK, lw=5, solid_capstyle="round", zorder=7)
     ax.add_patch(patches.Circle((mx, my), 30, fc="#FFFFFF", ec=PHASE, lw=2.2, zorder=8))
@@ -333,7 +333,7 @@ for sx, sy, ref, rot, prop in ((1, 1, "M1", "CCW", "T9545R"), (-1, -1, "M2", "CC
                 arrowprops=dict(arrowstyle="-|>", color=PHASE, lw=1.3), zorder=9)
     ax.text(mx + sx*74, my + sy*20, prop, fontsize=8.6, fontweight="bold", color=INK,
             ha="center", va="center", zorder=9)
-ax.text(390, 112, "T9545R is the reversed (pusher) blade.  A blade fitted to the wrong motor\n"
+ax.text(390, 112, "MF9545 R is the reversed (pusher) blade.  A blade fitted to the wrong motor\n"
                   "flips the aircraft on takeoff.",
         fontsize=8.0, color="#B01020", ha="center", va="center", zorder=9)
 
@@ -355,11 +355,11 @@ rows = [
  ("W01","BT1 XT60","PM1 input","14.8 V","12 AWG silicone","main battery lead"),
  ("W03","PM1 output","PDB1 pad","14.8 V","12 AWG silicone","470 uF at the pad"),
  ("W04","PDB1 pad","ESC1-4 input","14.8 V","14 AWG x 4","11.1 A total at hover"),
- ("W02","PM1 6-pin","FC1 POWER","5.3 V","6p molex","feeds FC1 GPS1 TM1 RX1 only"),
+ ("W02","PDB1 pad","FC1 POWER VBAT","14.8 V","XT60 or 6p","FC 5V BEC 2.5A feeds RX/GPS/flow"),
  ("W05-08","FC1 MAIN 1-4","ESC1-4 signal","PWM","3p servo","motor order per DETAIL A"),
  ("W09","OF1 flow","FC1 UART/I2C","flow + range","per datasheet","INDOOR: replaces GPS"),
- ("W10","TM1","FC1 TELEM1","UART","6p","57 600 bps"),
- ("W11","RX1","FC1 RC IN","S.BUS","3p servo","manual override path"),
+ ("W10","MAG1 compass","FC1 GPS port","I2C","6p GH1.25","SDA/SCL + 5 V"),
+ ("W11","RX1 R86C V2","FC1 RC port","SBUS","4p GH1.25","GND/RX5/TX5/5V"),
  ("W12","FC1 TELEM2","PC1 USB-A","MAVLink2","USB-TTL 3.3 V","do NOT land the 5 V wire"),
  ("W13","PDB1 pad","U1 input","14.8 V","16 AWG",""),
  ("W14","PDB1 pad","U3 Vcc","14.8 V","16 AWG","payload motive power"),
@@ -386,30 +386,31 @@ for i, r_ in enumerate(rows):
     yy -= 14.6
 
 # — notes —
-nx, ny, nw, nh = 1960, 275, 850, 210
+nx, ny, nw, nh = 1960, 262, 850, 223
 ax.add_patch(patches.Rectangle((nx, ny), nw, nh, fc="#FFFFFF", ec=INK, lw=1.6, zorder=6))
 ax.add_patch(patches.Rectangle((nx, ny+nh-29), nw, 29, fc="#B01020", ec=INK, lw=1.6, zorder=7))
 ax.text(nx+12, ny+nh-14.5, "NOTES  —  READ BEFORE FIRST POWER-UP", fontsize=10.5,
         fontweight="bold", color="#FFFFFF", va="center", zorder=8)
 notes = [
  "1.  Bond every GND to the PDB1 star point. Split returns inject switching noise into the PWM lines.",
- "2.  VERIFY: KoA H743 may have built-in voltage/current sensing. Check before buying PM1.",
- "3.  PC1 is fed through J8-2 / J8-6, which bypasses the board polyfuse. Fit an inline 3 A fuse.",
- "4.  3.3 V GPIO sits below the WS2812B VIH of 0.7 x VDD = 3.5 V and below the 5 V TTL",
- "      threshold. U4 is required on W25, W26 and W27.",
- "5.  GPIO18 is the I2S bit clock. It cannot also drive the LED strip or the actuator PWM, and",
- "      GPIO12 shares channel PWM0 with GPIO18, so it is unavailable too.",
+ "2.  KoA FC takes VBAT up to 26 V and has a 5 V 2.5 A BEC, so NO power module is needed for 4S.",
+ "      It feeds the receiver, compass and flow sensor. Add PM1 only if you want current sensing.",
+ "3.  KoA FC has NO on-board compass. An external one is REQUIRED: without compass and without",
+ "      GPS the EKF cannot resolve yaw, so LOITER / GUIDED will not arm indoors.",
+ "4.  PC1 needs its own UBEC. The FC 5 V BEC is 2.5 A and is already loaded by RX / compass / flow.",
+ "5.  3.3 V GPIO sits below the WS2812B VIH of 3.5 V. U4 is required on W25, W26 and W27.",
+ "      GPIO18 is the I2S bit clock and GPIO12 shares PWM0 with it, so neither can drive the LEDs.",
  "6.  First spin-up with the propellers removed. Verify rotation against DETAIL A, then fit blades.",
  "7.  INDOOR: ceiling 4.22 m caps altitude at 3.4 m. A 600 mm structure reaches head height.",
  "8.  Clamp LED1 brightness in software. 30 px at full white draws 1.8 A and browns out PC1.",
 ]
 yy = ny + nh - 48
 for n in notes:
-    ax.text(nx+14, yy, n, fontsize=8.0, color=INK, va="center", zorder=8)
-    yy -= 16.4
+    ax.text(nx+14, yy, n, fontsize=7.6, color=INK, va="center", zorder=8)
+    yy -= 15.3
 
 # — title block / budget —
-bx, by, bw, bh = 1960, 95, 850, 165
+bx, by, bw, bh = 1960, 95, 850, 152
 ax.add_patch(patches.Rectangle((bx, by), bw, bh, fc="#FFFFFF", ec=INK, lw=1.6, zorder=6))
 ax.add_patch(patches.Rectangle((bx, by+bh-29), bw, 29, fc=INK, ec=INK, lw=1.6, zorder=7))
 ax.text(bx+12, by+bh-14.5, "DESIGN BUDGET", fontsize=10.5, fontweight="bold",
@@ -417,10 +418,10 @@ ax.text(bx+12, by+bh-14.5, "DESIGN BUDGET", fontsize=10.5, fontweight="bold",
 ax.text(bx+bw-12, by+bh-14.5, "SHEET 1 OF 1   ·   REV C   ·   2026-10-16",
         fontsize=9, color="#FFFFFF", ha="right", va="center", zorder=8)
 bud = [("All-up weight", "1 463 g", INK),
-       ("Static thrust, 4 x T9545 at 14.8 V", "3 400 g", INK),
-       ("Thrust to weight", "2.32 : 1        target 2.0 : 1", V50),
-       ("Hover throttle  /  hover current", "43 %   /   11.1 A", INK),
-       ("Endurance, 2800 mAh at 80 % DoD", "12.1 min       OK", V50),
+       ("Static thrust, 4 x MF9545 at 16 V", "4 932 g", INK),
+       ("Thrust to weight", "3.37 : 1        target 2.0 : 1", AUD),
+       ("Hover throttle  /  hover current", "30 %   /   11.7 A", INK),
+       ("Endurance, 2800 mAh at 80 % DoD", "11.5 min       OK", V50),
        ("Indoor ceiling 4.22 m", "max altitude 3.4 m", AUD),
        ("5 V rail load", "3.15 A of 5.00 A        63 %", V50)]
 yy = by + bh - 48
@@ -428,7 +429,7 @@ for k, v, c in bud:
     ax.text(bx+16, yy, k, fontsize=8.4, color=GREY, va="center", zorder=8)
     ax.text(bx+bw-16, yy, v, fontsize=8.4, fontweight="bold", color=c, ha="right",
             va="center", zorder=8)
-    yy -= 17.5
+    yy -= 16.0
 
 plt.savefig("/Users/kennytang/shepherdron/shepherdron_wiring_diagram.png",
             facecolor=PAPER, bbox_inches="tight", pad_inches=0.16)
