@@ -201,6 +201,7 @@ shepherdron/
 ├── shepherdron_ground.py    지상국 : YOLO 전담
 ├── shepherdron_pi.py        기체 에이전트 : 판단·구동 전담
 ├── main.py                  단일 기기 실행기 (개발·튜닝용)
+├── generate_manual.py       조립 설명서 도면 생성기
 └── config.py                설정 (.env 로 덮어쓰기)
 ```
 
