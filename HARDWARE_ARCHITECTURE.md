@@ -9,7 +9,7 @@ Shepherdron 최종 검증 하드웨어 배선도 & 시스템 아키텍처
 > 주의 **이 문서는 rev.A입니다. 9건의 설계 오류가 발견되어 [HARDWARE_SPEC.md](HARDWARE_SPEC.md)(rev.B)로 대체되었습니다.**
 > 조립 시에는 반드시 rev.B의 핀맵과 결선표를 따르세요 : 텍스트판은 [WIRING.md](WIRING.md).
 
-![Shepherdron 조립 설명서 1장](manual_sheet1_power.png)
+![1장 : 부품 식별](manual_1_parts.png)
 
 ---
 

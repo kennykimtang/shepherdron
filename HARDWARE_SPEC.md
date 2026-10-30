@@ -94,12 +94,16 @@ LOITER / GUIDED 진입 자체가 막힙니다. GPS + 나침반 일체형 모듈�
 > **이 문서의 목적:** rev.A 배선도(`shepherdron_master_blueprint.png`)에 포함된 **9건의 설계 오류를 교정**하고,
 > 부품별 정격을 1차 출처로 재확인한 뒤 **질량·추력·전류·전원 예산을 수치로 검증**하는 것.
 
-![Shepherdron 조립 설명서 1장](manual_sheet1_power.png)
+![1장 : 부품 식별](manual_1_parts.png)
 
-![Shepherdron 조립 설명서 2장](manual_sheet2_signal.png)
+![2장 : 전원 배선](manual_2_power.png)
 
-> 위 도면은 `generate_wiring_diagram.py`로 생성됩니다. 각 배선에는 **W## 번호**가 붙어 있고,
-> 도면 하단 **WIRE SCHEDULE**에 출발점·도착점·전선 규격·주의사항이 1:1로 대응됩니다.
+![3장 : 신호 배선](manual_3_signal.png)
+
+![4장 : 조립 순서와 점검](manual_4_assembly.png)
+
+> 위 4장은 `generate_manual.py`로 생성됩니다. 부품 번호(A1, B2 …)와 배선 번호는
+> 4장 전체에서 같은 기호를 씁니다. 핀맵은 KoA FC 공식 매뉴얼 기준입니다.
 > **DETAIL A**는 모터 번호·회전 방향·프로펠러 종류를 위에서 본 배치로 보여줍니다.
 > 같은 내용의 **텍스트판**은 [WIRING.md](WIRING.md)에 있습니다 (grep/diff 가능).
 
@@ -251,8 +255,8 @@ SERIAL2_PROTOCOL = 2      # MAVLink2
 SERIAL2_BAUD     = 921    # 불안정 시 115
 BRD_SAFETYENABLE = 1      # 안전 스위치 활성
 BATT_MONITOR     = 4      # 파워모듈 전압+전류
-MOT_BAT_VOLT_MAX = 12.6   # 3S
-MOT_BAT_VOLT_MIN = 9.9    # 3S
+MOT_BAT_VOLT_MAX = 16.8   # 4S 만충
+MOT_BAT_VOLT_MIN = 13.2   # 4S 방전
 ```
 
 5-2. Raspberry Pi 4 : **핀맵 확정본**

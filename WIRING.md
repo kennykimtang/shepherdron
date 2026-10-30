@@ -44,8 +44,10 @@ FC·수신기·GPS/나침반·옵티컬플로우까지 공급합니다. 전류 �
 
 | 장 | 내용 |
 |---|---|
-| [1장 : 부품 배치와 전원](manual_sheet1_power.png) | F450 상면 배치, 전원 계통, 조립 순서 12단계 |
-| [2장 : 신호와 설정](manual_sheet2_signal.png) | KoA FC 커넥터 핀아웃, 신호 결선, ArduPilot 파라미터, 비행 전 점검 |
+| [1장 : 부품 식별](manual_1_parts.png) | 부품 12종의 그림·수량·장착 위치. 조립 전 재고 확인용 |
+| [2장 : 전원 배선](manual_2_power.png) | 배터리 → 전원 분배 → ESC 4개 → 모터 4개, FC·UBEC·Pi 급전 |
+| [3장 : 신호 배선](manual_3_signal.png) | KoA FC 커넥터 핀맵, PWM·RC·GPS·I2C·TELEM2 결선, ArduPilot 파라미터 |
+| [4장 : 조립 순서와 점검](manual_4_assembly.png) | 조립 12단계, 비행 전 점검표 14항목, 첫 시동 순서 |
 
 아래 텍스트는 같은 내용을 grep·diff 가능한 형태로 옮긴 것입니다.
 > 부품 기호(BT1, U3 …)와 배선 번호(W01 …)는 도면과 1:1로 같습니다.
@@ -171,8 +173,8 @@ SERIAL2_BAUD      921    불안정 시 115
 SERIAL6_PROTOCOL  23     RC Input   (RC 포트 = UART5)
 BRD_SAFETYENABLE  1
 BATT_MONITOR      4      전압 + 전류
-MOT_BAT_VOLT_MAX  12.6   3S
-MOT_BAT_VOLT_MIN  9.9    3S
+MOT_BAT_VOLT_MAX  16.8   4S 만충 (4 x 4.2 V)
+MOT_BAT_VOLT_MIN  13.2   4S 방전 (4 x 3.3 V)
 ```
 
 4-2. PC1 : Raspberry Pi 4 · J8 40핀 헤더
