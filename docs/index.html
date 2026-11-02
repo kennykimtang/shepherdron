@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Shepherdron 군중 밀집도 관제</title>
+<meta name="description" content="브라우저에서 바로 도는 군중 밀집도 인식과 드론 유도 판단. 설치 없이 카메라만 연결하면 됩니다.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#0A0B0D; --s1:#101215; --s2:#15181C; --hair:#1E2226; --line:#2A2F35;
+  --fg:#E7E9EC; --fg2:#959CA5; --fg3:#5C636B;
+  --lime:#C8F542; --limeDim:#5F7323; --roi:#D9C27A;
+  --sans:"IBM Plex Sans KR","Apple SD Gothic Neo",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);
+     font-size:15px;-webkit-font-smoothing:antialiased;overflow:hidden}
+button{font-family:inherit;color:inherit}
+
+#app{height:100%;display:grid;grid-template-rows:auto 1fr;gap:0}
+
+/* 상단 */
+#top{display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--s1);
+     border-bottom:1px solid var(--line);flex-wrap:wrap}
+#mark{width:30px;height:30px;flex:0 0 30px}
+.brand{display:flex;flex-direction:column;line-height:1.15}
+.brand b{font-size:17px;letter-spacing:.09em;font-weight:700}
+.brand span{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--fg3)}
+.sep{width:1px;align-self:stretch;background:var(--line);margin:2px 2px}
+#subtitle{font-size:13.5px;color:var(--fg2)}
+#top .right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+select,.btn{background:var(--s2);border:1px solid var(--line);color:var(--fg);
+     border-radius:3px;padding:5px 9px;font-size:12.5px;font-family:var(--mono);cursor:pointer}
+.btn[aria-pressed="true"]{background:var(--lime);color:#0B0D10;border-color:var(--lime);font-weight:600}
+.btn.go{background:var(--lime);color:#0B0D10;border-color:var(--lime);font-weight:600}
+.btn:focus-visible,select:focus-visible{outline:2px solid var(--lime);outline-offset:1px}
+#clock{font-family:var(--mono);font-size:15px;letter-spacing:.02em}
+#srcPill{font-family:var(--mono);font-size:11.5px;color:#FF5A4F;display:flex;align-items:center;gap:5px}
+#srcPill i{width:8px;height:8px;border-radius:50%;background:currentColor;display:block}
+
+/* 본문 */
+#main{display:grid;grid-template-columns:1fr minmax(300px,374px);gap:8px;padding:8px;min-height:0}
+#left,#right{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0}
+.card{background:var(--s1);border:1px solid var(--hair);min-width:0}
+.hd{display:flex;align-items:center;gap:9px;padding:6px 11px;border-bottom:1px solid var(--hair);background:var(--s2)}
+.hd .code{font-family:var(--mono);font-size:11px;color:var(--fg3);letter-spacing:.06em}
+.hd .nm{font-size:13.5px;font-weight:600;color:var(--fg2)}
+.hd .rt{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--fg3)}
+.hd.brandbar{border-left:3px solid var(--lime)}
+.hd.brandbar .code{color:var(--lime)}
+
+#stage{position:relative;flex:1 1 auto;min-height:0;background:#000;
+       display:flex;align-items:center;justify-content:center;overflow:hidden}
+#view{max-width:100%;max-height:100%;display:block}
+#video{display:none}
+#msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+     justify-content:center;gap:12px;text-align:center;padding:24px;color:var(--fg2);font-size:14px}
+#msg b{color:var(--fg);font-size:16px}
+#msg.hide{display:none}
+
+/* 수치 */
+#readout{display:grid;grid-template-columns:repeat(5,1fr)}
+#readout div{padding:7px 12px;border-right:1px solid var(--hair);min-width:0}
+#readout div:last-child{border-right:0}
+#readout .k{font-size:11.5px;color:var(--fg3)}
+#readout .v{font-family:var(--mono);font-size:25px;line-height:1.25;
+            font-variant-numeric:tabular-nums}
+#readout .u{font-size:11px;color:var(--fg3);margin-left:3px}
+#lvBar{display:flex;gap:3px;margin:5px 0 3px}
+#lvBar i{height:6px;flex:1;background:#20252A;display:block}
+#lvTxt{font-size:14px;font-weight:700}
+
+#trend{height:96px;flex:0 0 auto}
+#trendCv{display:block;width:100%;height:68px}
+#tacCv{display:block;width:100%}
+#msn{flex:0 0 auto}
+#track{display:flex;gap:4px;padding:9px 10px}
+#track div{flex:1;text-align:center;padding:6px 2px;border:1px solid var(--line);
+           font-size:12.5px;color:var(--fg3);min-width:0}
+#track div.on{background:var(--lime);color:#0B0D10;border-color:var(--lime);font-weight:700}
+#track div.done{border-color:var(--limeDim);color:var(--limeDim)}
+#msnRows{padding:0 10px 8px}
+#msnRows .r{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--hair);font-size:13px}
+#msnRows .r:last-child{border-bottom:0}
+#msnRows .r b{flex:0 0 52px;color:var(--fg3);font-weight:400}
+#msnRows .r span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#msnRows .r span.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+#msnRows .r span.hi{color:var(--lime);font-weight:600}
+#log{flex:1 1 auto;min-height:0;overflow-y:auto}
+#log .e{display:flex;gap:8px;align-items:baseline;padding:5px 10px;border-bottom:1px solid var(--hair);font-size:12.5px}
+#log time{font-family:var(--mono);font-size:11px;color:var(--fg3);flex:0 0 auto}
+#log .tag{font-size:11px;font-weight:700;padding:1px 6px;color:#0B0D10;flex:0 0 auto}
+#log .tx{color:var(--fg2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+@media (max-width:860px){
+  body{overflow:auto}
+  #app{height:auto}
+  #main{grid-template-columns:1fr}
+  #stage{height:46vh}
+  #readout{grid-template-columns:repeat(3,1fr)}
+  #readout div:nth-child(3n){border-right:0}
+  #log{max-height:220px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <svg id="mark" viewBox="0 0 48 48" fill="none" stroke="#C8F542" stroke-width="3" aria-hidden="true">
+      <path d="M14 16a7 7 0 0 1 14 0" stroke-linecap="round"/>
+      <path d="M14 16v22M28 16v4" stroke-linecap="round"/>
+      <circle cx="21" cy="30" r="4" stroke-width="1.6"/><circle cx="35" cy="30" r="4" stroke-width="1.6"/>
+      <circle cx="21" cy="42" r="4" stroke-width="1.6"/><circle cx="35" cy="42" r="4" stroke-width="1.6"/>
+      <path d="M21 30l14 12M35 30L21 42" stroke-width="1.4"/>
+    </svg>
+    <div class="brand"><b>SHEPHERDRON</b><span>CROWD GUIDANCE DRONE</span></div>
+    <div class="sep"></div>
+    <div id="subtitle">군중 밀집 감지 · 유도 관제</div>
+    <div class="right">
+      <select id="camSel" title="카메라 선택"><option>카메라 준비 중</option></select>
+      <button class="btn go" id="btnStart" type="button">카메라 시작</button>
+      <button class="btn" id="btnFile" type="button">영상 파일</button>
+      <input type="file" id="file" accept="video/*" hidden>
+      <button class="btn" id="btnDispatch" type="button" title="단축키 m">수동 출동</button>
+      <button class="btn" id="btnHeat" type="button" aria-pressed="true" title="단축키 h">밀집도</button>
+      <button class="btn" id="btnBox" type="button" aria-pressed="true" title="단축키 b">검출</button>
+      <button class="btn" id="btnFull" type="button" title="단축키 f">전체화면</button>
+      <div class="sep"></div>
+      <div id="srcPill"><i></i>대기</div>
+      <div id="clock">--:--:--</div>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="left">
+      <div class="card" style="flex:1 1 auto;display:flex;flex-direction:column;min-height:0">
+        <div class="hd"><span class="code">CAM</span><span class="nm">카메라</span>
+          <span class="rt" id="camInfo">—</span></div>
+        <div id="stage">
+          <video id="video" playsinline muted></video>
+          <canvas id="view"></canvas>
+          <div id="msg">
+            <b>카메라 시작을 누르세요</b>
+            <span>브라우저가 카메라 권한을 묻습니다. 폰에서 열면 후면 카메라를 쓸 수 있습니다.<br>
+              카메라가 없으면 <b>영상 파일</b>로 녹화본을 열어도 됩니다.</span>
+          </div>
+        </div>
+      </div>
+      <div class="card" id="readout">
+        <div><div class="k">인원</div><div class="v" id="rCount">0</div></div>
+        <div><div class="k">면적</div><div class="v"><span id="rArea">—</span><span class="u">㎡</span></div></div>
+        <div><div class="k">군중밀도</div><div class="v"><span id="rDens">—</span><span class="u">명/㎡</span></div></div>
+        <div><div class="k">국부 최대</div><div class="v"><span id="rPeak">—</span><span class="u">명/㎡</span></div></div>
+        <div><div class="k">등급 <span style="color:var(--fg3)">· 국부 최대 기준</span></div>
+          <div id="lvBar"><i></i><i></i><i></i><i></i><i></i></div>
+          <div id="lvTxt">0-안전</div></div>
+      </div>
+      <div class="card" id="trend">
+        <div class="hd"><span class="code">DNS</span><span class="nm">밀집 추이</span>
+          <span class="rt" id="trendRt">0F</span></div>
+        <canvas id="trendCv"></canvas>
+      </div>
+    </div>
+
+    <div id="right">
+      <div class="card">
+        <div class="hd brandbar"><span class="code">TAC</span><span class="nm">전술 지도</span>
+          <span class="rt" id="tacRt">—</span></div>
+        <canvas id="tacCv"></canvas>
+      </div>
+      <div class="card" id="msn">
+        <div class="hd brandbar"><span class="code">MSN</span><span class="nm">임무</span>
+          <span class="rt" id="msnRt">DONE 0</span></div>
+        <div id="track"></div>
+        <div id="msnRows"></div>
+      </div>
+      <div class="card" id="log" style="display:flex;flex-direction:column">
+        <div class="hd" style="position:sticky;top:0"><span class="code">LOG</span>
+          <span class="nm">이벤트</span><span class="rt" id="logRt">0</span></div>
+        <div id="logList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
