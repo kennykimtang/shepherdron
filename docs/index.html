@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Shepherdron 군중 밀집도 관제</title>
-<meta name="description" content="브라우저에서 바로 도는 군중 밀집도 인식과 드론 유도 판단. 설치 없이 카메라만 연결하면 됩니다.">
+<meta name="description" content="브라우저에서 바로 도는 군중 밀집도 인식과 드론 유도 판단. 폰을 카메라로, 발표장 PC를 화면으로 쓸 수 있습니다.">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
 :root{
@@ -96,6 +96,39 @@ select,.btn{background:var(--s2);border:1px solid var(--line);color:var(--fg);
 #log .tag{font-size:11px;font-weight:700;padding:1px 6px;color:#0B0D10;flex:0 0 auto}
 #log .tx{color:var(--fg2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* 페어링 */
+#pair{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:18px;overflow:auto}
+.pairBox{display:flex;gap:22px;align-items:center;max-width:720px;flex-wrap:wrap;justify-content:center}
+.pairQr{width:210px;flex:0 0 210px;background:#fff;padding:10px;border-radius:4px}
+.pairTx{flex:1 1 300px;min-width:260px}
+.pairTx b{font-size:17px;display:block;margin-bottom:6px}
+.pairTx p{margin:0 0 10px;font-size:13.5px;color:var(--fg2);line-height:1.6}
+.pairTx p.dim{color:var(--fg3);font-size:12.5px}
+.codeRow{display:flex;align-items:baseline;gap:10px;margin:0 0 12px}
+.codeRow span{font-size:12px;color:var(--fg3)}
+.codeRow code{font-family:var(--mono);font-size:30px;letter-spacing:.16em;color:var(--lime)}
+.urlRow{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.urlRow code{font-family:var(--mono);font-size:11.5px;color:var(--fg2);background:var(--s2);
+  padding:5px 8px;border-radius:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+
+/* 폰 카메라 모드 */
+#camMode{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;
+  flex-direction:column;gap:12px;padding:16px;padding-top:max(16px,env(safe-area-inset-top,0px))}
+.camHead{display:flex;align-items:center;gap:10px}
+.camHead svg{width:30px;height:30px;flex:0 0 30px}
+.camHead b{display:block;font-size:16px}
+.camHead span{font-family:var(--mono);font-size:12px;color:var(--fg3)}
+.camStat{font-size:15px;font-weight:600;padding:10px 12px;background:var(--s1);
+  border:1px solid var(--line);border-left:3px solid var(--fg3)}
+.camStat.live{border-left-color:var(--lime);color:var(--lime)}
+.camStat.err{border-left-color:#FF5A4F;color:#FF5A4F}
+#camPrev{width:100%;flex:1 1 auto;min-height:0;object-fit:cover;background:#000;border:1px solid var(--hair)}
+.camStats{font-family:var(--mono);font-size:13px;color:var(--fg2);padding:8px 12px;
+  background:var(--s1);border:1px solid var(--hair)}
+.camBtns{display:flex;gap:8px}
+.camBtns .btn{flex:1;padding:12px;font-size:14px}
+.camHint{margin:0;font-size:12.5px;color:var(--fg3);line-height:1.6}
+
 @media (max-width:860px){
   body{overflow:auto}
   #app{height:auto}
@@ -122,14 +155,21 @@ select,.btn{background:var(--s2);border:1px solid var(--line);color:var(--fg);
     <div class="sep"></div>
     <div id="subtitle">군중 밀집 감지 · 유도 관제</div>
     <div class="right">
-      <select id="camSel" title="카메라 선택"><option>카메라 준비 중</option></select>
-      <button class="btn go" id="btnStart" type="button">카메라 시작</button>
+      <select id="camSel" title="카메라 선택" hidden><option>카메라 준비 중</option></select>
+      <button class="btn" id="btnPhone" type="button">폰 카메라 연결</button>
+      <button class="btn go" id="btnStart" type="button">이 기기 카메라</button>
       <button class="btn" id="btnFile" type="button">영상 파일</button>
       <input type="file" id="file" accept="video/*" hidden>
       <button class="btn" id="btnDispatch" type="button" title="단축키 m">수동 출동</button>
       <button class="btn" id="btnHeat" type="button" aria-pressed="true" title="단축키 h">밀집도</button>
       <button class="btn" id="btnBox" type="button" aria-pressed="true" title="단축키 b">검출</button>
       <button class="btn" id="btnFull" type="button" title="단축키 f">전체화면</button>
+      <select id="everySel" title="검출 주기 — 느린 PC 에서 낮추세요">
+        <option value="1">검출 매 프레임</option>
+        <option value="2">검출 1/2</option>
+        <option value="3">검출 1/3</option>
+        <option value="5">검출 1/5</option>
+      </select>
       <div class="sep"></div>
       <div id="srcPill"><i></i>대기</div>
       <div id="clock">--:--:--</div>
@@ -145,9 +185,26 @@ select,.btn{background:var(--s2);border:1px solid var(--line);color:var(--fg);
           <video id="video" playsinline muted></video>
           <canvas id="view"></canvas>
           <div id="msg">
-            <b>카메라 시작을 누르세요</b>
-            <span>브라우저가 카메라 권한을 묻습니다. 폰에서 열면 후면 카메라를 쓸 수 있습니다.<br>
-              카메라가 없으면 <b>영상 파일</b>로 녹화본을 열어도 됩니다.</span>
+            <b>어떻게 쓸지 고르세요</b>
+            <span><b>폰 카메라 연결</b> — 이 화면은 그대로 두고 폰을 카메라로 씁니다.
+              발표장 PC 에서 이걸 쓰세요.<br>
+              <b>이 기기 카메라</b> — 지금 보는 기기의 카메라를 씁니다.<br>
+              <b>영상 파일</b> — 녹화본을 열어 같은 처리를 돌립니다.</span>
+          </div>
+          <div id="pair" hidden>
+            <div class="pairBox">
+              <div class="pairQr" id="qr"></div>
+              <div class="pairTx">
+                <b>폰으로 이 QR 을 찍으세요</b>
+                <p>폰 카메라 앱으로 찍으면 페이지가 열리고, 바로 이 화면으로 영상이 옵니다.
+                  영상은 서버를 거치지 않고 기기끼리 직접 흐릅니다.</p>
+                <div class="codeRow"><span>코드</span><code id="code">------</code></div>
+                <p class="dim">QR 이 안 되면 폰 브라우저에서 아래 주소를 열고 코드를 넣으세요.</p>
+                <div class="urlRow"><code id="camUrl">—</code>
+                  <button class="btn" id="btnCopyUrl" type="button">복사</button></div>
+                <p class="dim" id="pairState">코드를 만드는 중…</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -188,8 +245,9 @@ select,.btn{background:var(--s2);border:1px solid var(--line);color:var(--fg);
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script type="module" src="./app.js"></script>
 </body>
 </html>

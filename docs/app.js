@@ -2,6 +2,8 @@
  * 판단 로직은 vision.js 에 있고, 그쪽은 노트북 파이썬 코드와 같은 수식을 쓴다.
  */
 import * as V from "./vision.js";
+import { Detector } from "./detector.js";
+import { hostDisplay, joinAsCamera, cameraUrl, drawQr } from "./link.js";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
@@ -19,6 +21,7 @@ const S = {
   peaks: [], counts: [], levels: [], active: [],
   log: [], lastMsn: "IDLE", lastLv: 0,
   fps: 0, lastT: 0, srcLabel: "대기", live: false, lastActive: false,
+  det: null, link: null, mode: "idle", every: 1, tick: 0, lastPeople: [],
 };
 
 /* ── 밀집도 컬러맵 (파이썬과 같은 정지점) ── */
@@ -74,7 +77,56 @@ async function startCam() {
     const v = $("video");
     v.srcObject = S.stream; v.loop = false;
     await v.play();
-    await listCams();
+    await /* ── 폰 : ?cam=CODE 로 열리면 카메라 모드 ── */
+async function runCameraMode(code) {
+  $("app").hidden = true;
+  $("camMode").hidden = false;
+  $("camCode").textContent = `코드 ${code}`;
+  const stat = $("camStat"), prev = $("camPrev");
+  const set = (t, cls = "") => { stat.textContent = t; stat.className = "camStat " + cls; };
+  let facing = "environment", stream = null, link = null;
+
+  async function open() {
+    try {
+      stream?.getTracks().forEach((t) => t.stop());
+      set("카메라 여는 중");
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      prev.srcObject = stream;
+      await prev.play().catch(() => {});
+      link?.stop?.();
+      set("화면을 찾는 중");
+      link = joinAsCamera(code, stream, {
+        onState(st, detail) {
+          if (st === "live") set("연결됨 · 영상 보내는 중", "live");
+          else if (st === "connecting") set("화면을 찾는 중");
+          else if (st === "waiting") set("화면과 끊김 — 다시 시도 중");
+          else if (st === "error") set(detail, "err");
+        },
+        onReport(r) {
+          if (!r || typeof r !== "object") return;
+          $("camBack").textContent =
+            `인원 ${r.n}  국부최대 ${r.peak} 명/㎡  ${r.lv}  임무 ${r.msn}`;
+        },
+      });
+      try { await navigator.wakeLock?.request("screen"); } catch (_) {}
+    } catch (e) {
+      set(`카메라를 열지 못했습니다 (${e.name}). 권한을 허용하고 새로고침하세요.`, "err");
+    }
+  }
+  $("camFlip").onclick = () => { facing = facing === "environment" ? "user" : "environment"; open(); };
+  $("camStop").onclick = () => {
+    link?.stop?.(); stream?.getTracks().forEach((t) => t.stop());
+    set("중지했습니다. 새로고침하면 다시 연결합니다.");
+  };
+  open();
+}
+
+const camCode = new URLSearchParams(location.search).get("cam");
+if (camCode) runCameraMode(camCode.toUpperCase());
+else listCams();
     S.srcLabel = $("camSel").selectedOptions[0]?.textContent || "카메라";
     S.live = true;
     begin();
@@ -103,15 +155,16 @@ function fail(text) {
 }
 
 async function begin() {
-  $("msg").classList.remove("hide");
-  $("msg").innerHTML = "<b>인식 모델 불러오는 중</b><span>처음 한 번만 내려받습니다.</span>";
-  if (!S.model) {
-    try { S.model = await cocoSsd.load({ base: "mobilenet_v2" }); }
-    catch (e) { return fail("인식 모델을 내려받지 못했습니다. 인터넷 연결을 확인하세요."); }
+  $("pair").hidden = true;
+  if (!S.det) {
+    const note = (t) => { $("msg").innerHTML = `<b>${t}</b><span>처음 한 번만 내려받습니다 (약 12 MB).</span>`; };
+    $("msg").classList.remove("hide"); note("인식 모델 준비 중");
+    try { S.det = await new Detector().load(note); }
+    catch (e) { return fail(`인식 모델을 준비하지 못했습니다. ${e.message}`); }
+    addLog(`검출기 준비 · YOLOv8n ${S.det.backend}`, "SYS", "#22272C", "#9AA2AB");
   }
   $("msg").classList.add("hide");
-  addLog("세션 시작", "SYS", "#22272C", "#9AA2AB");
-  if (!S.running) { S.running = true; loop(); }
+  if (!S.running) { S.running = true; addLog("세션 시작", "SYS", "#22272C", "#9AA2AB"); loop(); }
 }
 
 /* ── 로그 ── */
@@ -136,12 +189,17 @@ async function loop() {
     if (S.lastT) S.fps = S.fps * 0.8 + (1 / Math.max(1e-3, now - S.lastT)) * 0.2;
     S.lastT = now;
 
-    let preds = [];
-    try { preds = await S.model.detect(v, 30, 0.45); } catch (_) {}
-    const people = preds.filter((p) => p.class === "person").map((p) => ({
-      x: p.bbox[0] + p.bbox[2] / 2, y: p.bbox[1] + p.bbox[3],
-      boxH: p.bbox[3], bbox: p.bbox,
-    }));
+    // 느린 PC 에서는 검출을 건너뛰고 영상만 부드럽게 흐르게 한다
+    if (S.tick++ % S.every === 0) {
+      try {
+        const preds = await S.det.detect(v, 0.3, 0.45);
+        S.lastPeople = preds.map((p) => ({
+          x: p.bbox[0] + p.bbox[2] / 2, y: p.bbox[1] + p.bbox[3],
+          boxH: p.bbox[3], bbox: p.bbox,
+        }));
+      } catch (_) {}
+    }
+    const people = S.lastPeople;
 
     const W = v.videoWidth, H = v.videoHeight;
     const field = V.densityField(people, S.sigma);
@@ -168,6 +226,8 @@ async function loop() {
       S.lastMsn = S.mission.state;
     }
 
+    S.link?.report?.({ n: roi.count, peak: +roi.peakDensity.toFixed(2),
+                       lv: V.levelTag(roi.level), msn: V.MISSION[S.mission.state] });
     drawView(v, W, H, people, field, roi);
     drawTac(pic);
     drawTrend();
@@ -231,7 +291,9 @@ function drawView(v, W, H, people, field, roi) {
   const L = V.levelInfo(roi.level);
   ctx.font = `700 ${fs * 0.8}px "IBM Plex Sans KR",sans-serif`;
   ctx.fillStyle = L.color; ctx.fillText(V.levelTag(roi.level), 18, 18 + fs * 1.25);
-  $("camInfo").textContent = `${W}×${H}  ${S.fps.toFixed(1)}fps`;
+  $("camInfo").textContent =
+    `${W}×${H}  ${S.fps.toFixed(1)}fps  ${S.det?.backend || ""}` +
+    (S.every > 1 ? `  1/${S.every}` : "");
 }
 
 /* ── 전술 지도 ── */
@@ -421,7 +483,43 @@ setInterval(() => {
     .map((n) => String(n).padStart(2, "0")).join(":");
 }, 500);
 
+function startPhoneLink() {
+  stopSrc(); S.link?.stop?.();
+  $("msg").classList.add("hide");
+  $("pair").hidden = false;
+  $("pairState").textContent = "코드를 만드는 중…";
+  S.link = hostDisplay({
+    onCode(code) {
+      const url = cameraUrl(code);
+      $("code").textContent = code;
+      $("camUrl").textContent = url;
+      drawQr($("qr"), url);
+      $("pairState").textContent = "폰이 붙기를 기다리는 중";
+    },
+    onState(st, detail) {
+      if (st === "waiting") $("pairState").textContent = "폰이 붙기를 기다리는 중";
+      else if (st === "live") $("pairState").textContent = "연결됨";
+      else if (st === "error") { $("pairState").textContent = detail; $("pairState").style.color = "#FF5A4F"; }
+    },
+    async onStream(stream) {
+      const v = $("video");
+      v.srcObject = stream; v.src = ""; v.loop = false;
+      await v.play().catch(() => {});
+      S.srcLabel = "폰 카메라"; S.live = true;
+      addLog("폰 카메라 연결됨", "연결", "#C8F542");
+      begin();
+    },
+  });
+}
+
+$("btnPhone").onclick = startPhoneLink;
 $("btnStart").onclick = startCam;
+$("btnCopyUrl").onclick = async () => {
+  const t = $("camUrl").textContent;
+  try { await navigator.clipboard.writeText(t); $("btnCopyUrl").textContent = "복사됨"; }
+  catch (_) { $("btnCopyUrl").textContent = "직접 복사"; }
+  setTimeout(() => ($("btnCopyUrl").textContent = "복사"), 1600);
+};
 $("btnFile").onclick = () => $("file").click();
 $("file").onchange = (e) => e.target.files[0] && openFile(e.target.files[0]);
 $("btnDispatch").onclick = () => { S.mission.dispatch(); addLog("운용자 수동 출동", "수동", LIME); };
@@ -429,9 +527,11 @@ const toggle = (id, key) => {
   $(id).onclick = () => { S[key] = !S[key]; $(id).setAttribute("aria-pressed", String(S[key])); };
 };
 toggle("btnHeat", "heat"); toggle("btnBox", "boxes");
+$("everySel").onchange = (e) => { S.every = Math.max(1, +e.target.value || 1); };
 $("btnFull").onclick = () => (document.fullscreenElement
   ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}));
 $("camSel").onchange = () => { if (S.stream) startCam(); };
+$("btnStart").addEventListener("click", () => ($("camSel").hidden = false));
 addEventListener("keydown", (e) => {
   if (e.target.tagName === "SELECT") return;
   const k = e.key.toLowerCase();
@@ -440,4 +540,53 @@ addEventListener("keydown", (e) => {
   else if (k === "b") $("btnBox").click();
   else if (k === "f") $("btnFull").click();
 });
-listCams();
+/* ── 폰 : ?cam=CODE 로 열리면 카메라 모드 ── */
+async function runCameraMode(code) {
+  $("app").hidden = true;
+  $("camMode").hidden = false;
+  $("camCode").textContent = `코드 ${code}`;
+  const stat = $("camStat"), prev = $("camPrev");
+  const set = (t, cls = "") => { stat.textContent = t; stat.className = "camStat " + cls; };
+  let facing = "environment", stream = null, link = null;
+
+  async function open() {
+    try {
+      stream?.getTracks().forEach((t) => t.stop());
+      set("카메라 여는 중");
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      prev.srcObject = stream;
+      await prev.play().catch(() => {});
+      link?.stop?.();
+      set("화면을 찾는 중");
+      link = joinAsCamera(code, stream, {
+        onState(st, detail) {
+          if (st === "live") set("연결됨 · 영상 보내는 중", "live");
+          else if (st === "connecting") set("화면을 찾는 중");
+          else if (st === "waiting") set("화면과 끊김 — 다시 시도 중");
+          else if (st === "error") set(detail, "err");
+        },
+        onReport(r) {
+          if (!r || typeof r !== "object") return;
+          $("camBack").textContent =
+            `인원 ${r.n}  국부최대 ${r.peak} 명/㎡  ${r.lv}  임무 ${r.msn}`;
+        },
+      });
+      try { await navigator.wakeLock?.request("screen"); } catch (_) {}
+    } catch (e) {
+      set(`카메라를 열지 못했습니다 (${e.name}). 권한을 허용하고 새로고침하세요.`, "err");
+    }
+  }
+  $("camFlip").onclick = () => { facing = facing === "environment" ? "user" : "environment"; open(); };
+  $("camStop").onclick = () => {
+    link?.stop?.(); stream?.getTracks().forEach((t) => t.stop());
+    set("중지했습니다. 새로고침하면 다시 연결합니다.");
+  };
+  open();
+}
+
+const camCode = new URLSearchParams(location.search).get("cam");
+if (camCode) runCameraMode(camCode.toUpperCase());
+else listCams();
