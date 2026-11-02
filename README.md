@@ -81,11 +81,12 @@ iMax B6 충전기 · RadioMaster Pocket · Raspberry Pi 4
 | [VISION.md](VISION.md) | 비전 코어 : 파이프라인·캘리브레이션·Pi 배포 |
 | [FLIGHT.md](FLIGHT.md) | 비행 제어 : 측지 변환·안전 가드·SITL |
 | [PAYLOAD.md](PAYLOAD.md) | 페이로드 : 전개/수축, 기구 방식 선택지 |
+| [DEMO.md](DEMO.md) | 시연 운용 : 발표용 관제 화면·PPT 삽입·단축키·한계 |
 | [OPERATIONS.md](OPERATIONS.md) | 현장 운용 : 비행 절차·ArduPilot 설정·문제 해결 |
 | [INDOOR.md](INDOOR.md) | 실내 시연 : GPS 없는 비행·고도 제약·안전 구성 |
 | [BOM.md](BOM.md) | 부품 명세 : 구매 링크·호환성 점검·미구매 항목 |
 | [PURCHASE.md](PURCHASE.md) | 추가 구매 목록 : 필수 항목·확인 사항·불필요 항목 |
-| [WIRING.md](WIRING.md) | 결선 명세 : 배선표 23선·핀맵·조립 순서 |
+| [WIRING.md](WIRING.md) | 결선 명세 : 배선표·핀맵·조립 순서 |
 | [HARDWARE_SPEC.md](HARDWARE_SPEC.md) | 부품 검증 : BOM·추력/전력 예산·검증 근거 |
 
 ---
@@ -175,10 +176,15 @@ shepherdron/
 ├── vision/
 │   ├── detector.py          YOLOv8n + ByteTrack 인물 검출/추적
 │   ├── density_analyzer.py  그리드 분할, 원근 보정 persons/m² 판정
+│   ├── density_field.py     KDE 밀집도 장, ROI 면적·등급 (격자 한계 보완)
+│   ├── tactical.py          발목점 → 바닥 좌표 투영, 유도 방향 산출
 │   ├── geometry.py          지상 평면 호모그래피, 픽셀→미터 변환
 │   ├── stability.py         경보 히스테리시스, 인원수·타겟 평활
 │   ├── pipeline.py          위 전부를 묶는 CrowdPipeline
 │   ├── camera.py            CSI(Picamera2) / USB / IP 스트림 백엔드
+│   ├── presentation.py      발표·관제 화면 렌더러
+│   ├── failover.py          라이브 끊김 시 녹화본 자동 전환
+│   ├── text_painter.py      한글·고정폭 텍스트 합성
 │   └── stream_handler.py    저지연 멀티스레드 스트림 수신기
 ├── hardware/
 │   └── payload.py           전개 구조물 추상화 (기구 방식 무관)
@@ -186,6 +192,7 @@ shepherdron/
 │   ├── geodesy.py           기체 기준 오프셋 ↔ 위경도, 반경 제한
 │   ├── mavlink_controller.py Pixhawk 연결, 모드 전환, 안전 가드
 │   ├── mission.py           유도 임무 상태기계
+│   ├── virtual_drone.py     가상 기체 — 같은 임무 로직을 하드웨어 없이
 │   └── sitl_demo.py         SITL 전 구간 실행기
 ├── link/
 │   ├── protocol.py          VisionReport / TelemetryReport
@@ -201,6 +208,7 @@ shepherdron/
 ├── shepherdron_ground.py    지상국 : YOLO 전담
 ├── shepherdron_pi.py        기체 에이전트 : 판단·구동 전담
 ├── main.py                  단일 기기 실행기 (개발·튜닝용)
+├── demo_presentation.py     발표용 시연기 (라이브 / PPT용 mp4 출력)
 ├── generate_manual.py       조립 설명서 도면 생성기
 └── config.py                설정 (.env 로 덮어쓰기)
 ```

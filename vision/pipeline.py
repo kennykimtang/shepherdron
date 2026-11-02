@@ -20,6 +20,7 @@ from typing import Optional, Tuple
 import numpy as np
 
 from vision.density_analyzer import DensityAnalysisResult, DensityAnalyzer
+from vision.density_field import DensityFieldEstimator, DensityFieldResult
 from vision.detector import DetectionResult, PersonDetector
 from vision.geometry import CameraModel, GroundPlane
 from vision.stability import AlertDebouncer, RollingCounter, TargetSmoother
@@ -52,6 +53,7 @@ class PipelineResult:
     target: Optional[TargetFix] = None
     fps: float = 0.0
     alert_rising_edge: bool = False            # 이번 프레임에 경보가 켜졌는가
+    field: Optional[DensityFieldResult] = None  # KDE 밀집도 장 (추정기를 준 경우)
 
     @property
     def unique_track_ids(self) -> int:
@@ -69,6 +71,7 @@ class CrowdPipeline:
         counter: Optional[RollingCounter] = None,
         smoother: Optional[TargetSmoother] = None,
         altitude_m: Optional[float] = None,
+        field_estimator: Optional[DensityFieldEstimator] = None,
     ):
         self.detector = detector
         self.analyzer = analyzer
@@ -78,6 +81,9 @@ class CrowdPipeline:
         self.counter = counter or RollingCounter()
         self.smoother = smoother or TargetSmoother()
         self.altitude_m = altitude_m
+        # KDE 장을 주면 3x3 격자 대신 이쪽이 타겟 좌표를 정한다.
+        # 격자는 셀이 커서 핫스팟을 1 m 단위로 짚지 못한다.
+        self.field_estimator = field_estimator
 
         self._frame_index = 0
         self._prev_t: Optional[float] = None
@@ -90,6 +96,8 @@ class CrowdPipeline:
 
     def set_ground_plane(self, plane: Optional[GroundPlane]) -> None:
         self.analyzer.set_ground_plane(plane)
+        if self.field_estimator is not None:
+            self.field_estimator.set_ground_plane(plane)
 
     def reset(self) -> None:
         """스트림 재연결·장면 전환 시 시간축 상태를 비운다."""
@@ -122,14 +130,23 @@ class CrowdPipeline:
         analysis = self.analyzer.analyze(frame.shape, detection,
                                          altitude_m=self.altitude_m)
 
-        raw = analysis.is_overcrowded
+        field = None
+        if self.field_estimator is not None:
+            field = self.field_estimator.estimate(frame.shape, detection)
+
+        # 격자는 셀 경계에 걸친 군집을 놓친다. KDE 장이 있으면 둘 중
+        # 하나라도 걸리면 위험으로 본다.
+        raw = analysis.is_overcrowded or (field.is_overcrowded if field else False)
         active = self.debouncer.update(raw, now=t)
         rising = active and not self._was_active
         self._was_active = active
         smoothed = self.counter.update(detection.count)
 
         target = None
-        smoothed_px = self.smoother.update(analysis.target_point)
+        # 타겟 좌표는 KDE 최대점이 격자 중심보다 훨씬 정확하다.
+        raw_point = (field.peak_point if field and field.peak_point is not None
+                     else analysis.target_point)
+        smoothed_px = self.smoother.update(raw_point)
         if active and smoothed_px is not None:
             px, py = int(smoothed_px[0]), int(smoothed_px[1])
             if self.camera is not None:
@@ -157,6 +174,7 @@ class CrowdPipeline:
             target=target,
             fps=fps,
             alert_rising_edge=rising,
+            field=field,
         )
 
     def render(self, frame: np.ndarray, result: PipelineResult, **flags) -> np.ndarray:
