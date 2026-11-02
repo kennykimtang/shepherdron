@@ -39,7 +39,7 @@ const S = {
   log: [], lastMsn: "IDLE", lastLv: 0,
   fps: 0, lastT: 0, srcLabel: "대기", live: false, lastActive: false,
   det: null, link: null, every: 1, lastPeople: [], pairTimer: 0,
-  view: null, dps: 0, rot: 0, phoneRot: null,
+  view: null, dps: 0, rot: 0, phoneRot: null, rotManual: false,
 };
 
 /* ── 밀집도 컬러맵 (파이썬과 같은 정지점) ── */
@@ -118,6 +118,8 @@ function openFile(f) {
   v.play();
   S.srcLabel = f.name; S.live = false;
   $("camName").textContent = f.name;
+  v.addEventListener("loadedmetadata",
+    () => autoOrient(v.videoWidth, v.videoHeight, null), { once: true });
   begin();
 }
 
@@ -261,6 +263,24 @@ const push = (a, v) => { a.push(v); if (a.length > 240) a.shift(); };
 const srcCv = document.createElement("canvas");
 const srcCtx = srcCv.getContext("2d");
 
+/* 세로 영상이 오면 가로로 세운다.
+ *
+ * 폰 각도(screen.orientation.angle)만 믿으면 안 된다. 화면 회전 잠금이 켜져
+ * 있으면 폰을 가로로 들어도 각도가 0 그대로다. 그래서 '영상이 세로 모양이면
+ * 돌린다' 를 기본으로 하고, 각도는 방향(좌/우)을 고르는 데만 쓴다.
+ * 사용자가 r 을 누르면 그 뒤로는 자동 판정이 끼어들지 않는다.
+ */
+function autoOrient(vw, vh, phoneAngle) {
+  if (S.rotManual || !vw || !vh) return;
+  const next = vh > vw ? (phoneAngle === 90 ? 270 : 90) : 0;
+  if (next === S.rot) return;
+  S.rot = next;
+  syncRotBtn();
+  if (next) {
+    addLog(`세로 영상이라 ${next}° 돌렸습니다. 방향이 반대면 r 을 누르세요`);
+  }
+}
+
 function uprightFrame(v) {
   const vw = v.videoWidth, vh = v.videoHeight;
   const rot = ((S.rot % 360) + 360) % 360;
@@ -307,10 +327,31 @@ function drawView(v, W, H, people, roi) {
     ctx.closePath(); ctx.stroke();
   }
   if (S.boxes) {
-    ctx.strokeStyle = "rgba(214,222,230,.85)"; ctx.lineWidth = Math.max(1, W / 900);
+    // 어떤 영상 위에서도 보이도록 어두운 테두리를 깔고 그 위에 밝은 선을 얹는다.
+    // 등급 색(회색-파랑-금색-주황-빨강)과 겹치지 않게 흰색을 쓴다.
+    const lw = Math.max(2, W / 500);
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(0,0,0,.72)"; ctx.lineWidth = lw * 2.2;
     for (const p of people) ctx.strokeRect(p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3]);
-    ctx.fillStyle = "#fff";
-    for (const p of people) { ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(2, W / 500), 0, 7); ctx.fill(); }
+    ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = lw;
+    for (const p of people) ctx.strokeRect(p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3]);
+    // 모서리를 강조색으로 찍어 사람 단위가 눈에 바로 들어오게 한다
+    const tick = Math.max(7, W / 64);
+    ctx.strokeStyle = T.accent; ctx.lineWidth = lw * 1.6;
+    for (const [bx, by, bw, bh] of people.map((p) => p.bbox)) {
+      for (const [cx, cy, sx, sy] of [[bx, by, 1, 1], [bx + bw, by, -1, 1],
+                                      [bx, by + bh, 1, -1], [bx + bw, by + bh, -1, -1]]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + sx * tick, cy); ctx.lineTo(cx, cy);
+        ctx.lineTo(cx, cy + sy * tick); ctx.stroke();
+      }
+    }
+    // 발목점 — 밀집도 계산이 쓰는 바로 그 지점
+    for (const p of people) {
+      ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(3, W / 320), 0, 7);
+      ctx.fillStyle = "#FFFFFF"; ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,.72)"; ctx.lineWidth = Math.max(1, W / 900); ctx.stroke();
+    }
   }
   if (roi.peakPoint && roi.level >= 3) {
     const [tx, ty] = roi.peakPoint, r = W / 24;
@@ -554,9 +595,7 @@ function startPhoneLink() {
     onStats(d) {
       if (!d || typeof d !== "object" || typeof d.rot !== "number") return;
       S.phoneRot = d.rot;
-      // 폰이 가로인데 세로 영상이 오면 세워 준다. 방향은 폰 각도로 정한다.
-      S.rot = (d.h > d.w && d.rot % 180 !== 0) ? (d.rot === 90 ? 270 : 90) : 0;
-      syncRotBtn();
+      autoOrient(d.w, d.h, d.rot);
     },
     onState(st, detail) {
       const el = $("pairState");
@@ -571,14 +610,10 @@ function startPhoneLink() {
       await v.play().catch(() => {});
       S.srcLabel = "폰 카메라"; S.live = true;
       $("camName").textContent = "폰 카메라";
-      const warn = () => {
-        const v2 = $("video");
-        if (v2.videoWidth && v2.videoHeight > v2.videoWidth) {
-          addLog("폰이 세로입니다. 가로로 돌리면 화면을 꽉 채웁니다");
-        }
-      };
-      v.addEventListener("loadedmetadata", warn, { once: true });
-      setTimeout(warn, 1200);
+      const check = () => autoOrient(v.videoWidth, v.videoHeight, S.phoneRot);
+      v.addEventListener("loadedmetadata", check);
+      v.addEventListener("resize", check);
+      setTimeout(check, 900);
       addLog("폰 카메라가 붙었습니다", T.accent);
       begin();
     },
@@ -591,13 +626,17 @@ function syncRotBtn() {
   $("btnRot").textContent = S.rot ? `회전 ${S.rot}°` : "회전";
   $("btnRot").setAttribute("aria-pressed", String(!!S.rot));
 }
-$("btnRot").onclick = () => { S.rot = (S.rot + 90) % 360; syncRotBtn(); };
+$("btnRot").onclick = () => {
+  S.rot = (S.rot + 90) % 360;
+  S.rotManual = true;            // 사용자가 정했으면 자동 판정은 물러난다
+  syncRotBtn();
+};
 
 $("btnSource").onclick = () => {
   stopSrc(); S.link?.stop?.(); S.link = null;
   $("video").srcObject = null; $("video").src = "";
   S.running = false; S.lastPeople = []; S.view = null; S.dps = 0;
-  S.rot = 0; S.phoneRot = null; syncRotBtn();
+  S.rot = 0; S.phoneRot = null; S.rotManual = false; syncRotBtn();
   showRunControls(false);
   $("tacEmpty").hidden = false; $("tacCv").hidden = true;
   $("msnEmpty").hidden = false;
