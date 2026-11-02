@@ -81,9 +81,25 @@ export function joinAsCamera(code, stream, { onState, onReport }) {
   const peer = newPeer(PREFIX + makeCode(10));        // 보내는 쪽은 임의 ID
   let conn = null, call = null, retry = 0;
 
+  /* WebRTC 는 CPU·대역폭을 보고 알아서 해상도를 낮춘다. 군중을 세려면 해상도가
+   * 프레임률보다 중요하므로 그쪽을 지키라고 일러 둔다. */
+  async function keepResolution() {
+    try {
+      stream.getVideoTracks().forEach((t) => { t.contentHint = "detail"; });
+      const pc = call?.peerConnection;
+      const sender = pc?.getSenders?.().find((x) => x.track?.kind === "video");
+      if (!sender) return;
+      const prm = sender.getParameters();
+      prm.encodings = [{ maxBitrate: 3000000, scaleResolutionDownBy: 1 }];
+      prm.degradationPreference = "maintain-resolution";
+      await sender.setParameters(prm);
+    } catch (_) { /* 지원하지 않는 브라우저는 그냥 둔다 */ }
+  }
+
   const connect = () => {
     const target = PREFIX + code.toUpperCase();
     call = peer.call(target, stream);
+    setTimeout(keepResolution, 800);
     conn = peer.connect(target, { reliable: true });
     conn.on("open", () => { retry = 0; onState?.("live"); });
     conn.on("data", (d) => onReport?.(d));

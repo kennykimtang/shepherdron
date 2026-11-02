@@ -39,7 +39,7 @@ const S = {
   log: [], lastMsn: "IDLE", lastLv: 0,
   fps: 0, lastT: 0, srcLabel: "대기", live: false, lastActive: false,
   det: null, link: null, every: 1, lastPeople: [], pairTimer: 0,
-  view: null, dps: 0,
+  view: null, dps: 0, rot: 0, phoneRot: null,
 };
 
 /* ── 밀집도 컬러맵 (파이썬과 같은 정지점) ── */
@@ -107,18 +107,20 @@ async function runCameraMode(code) {
   $("camCode").textContent = code;
   const stat = $("camStat"), prev = $("camPrev");
   const set = (t, cls = "") => { stat.textContent = t; stat.className = "camStat " + cls; };
-  let facing = "environment", stream = null, link = null;
+  let facing = "environment", stream = null, link = null, beat = 0;
 
   async function open() {
     try {
       stream?.getTracks().forEach((t) => t.stop());
       set("카메라 여는 중");
       // 가로 16:9 로 달라고 한다. 폰을 가로로 들면 PC 화면을 꽉 채운다.
+      // aspectRatio 를 걸면 폰이 센서 방향 기준으로 해석해 세로 16:9(540x960)
+      // 같은 결과가 나온다. 크기만 요청하고 방향은 받는 쪽에서 세운다.
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: facing },
-          width: { ideal: 1920 }, height: { ideal: 1080 },
-          aspectRatio: { ideal: 16 / 9 },
+          width: { ideal: 1280 }, height: { ideal: 720 },
+          frameRate: { ideal: 24 },
         },
         audio: false,
       });
@@ -150,19 +152,23 @@ async function runCameraMode(code) {
     const check = () => {
       const w = video.videoWidth, h = video.videoHeight;
       if (!w || !h) return;
-      $("rotHint").classList.toggle("on", h > w);
-      const track = stream.getVideoTracks()[0];
-      const st = track?.getSettings?.() || {};
-      $("camBack").dataset.size = `${st.width || w}x${st.height || h}`;
+      // 센서 방향은 WebRTC 로 넘어가지 않는다. 각도를 직접 보내 화면 쪽에서 세운다.
+      const ang = (screen.orientation?.angle ?? window.orientation ?? 0) | 0;
+      $("rotHint").classList.toggle("on", h > w && ang % 180 === 0);
+      link?.send?.({ rot: ang, w, h });
     };
     video.addEventListener("loadedmetadata", check);
     video.addEventListener("resize", check);
-    addEventListener("orientationchange", () => setTimeout(check, 400));
+    screen.orientation?.addEventListener?.("change", () => setTimeout(check, 350));
+    addEventListener("orientationchange", () => setTimeout(check, 350));
+    clearInterval(beat);
+    beat = setInterval(check, 2000);  // 연결이 늦게 붙어도 전달되게
     check();
   }
 
   $("camFlip").onclick = () => { facing = facing === "environment" ? "user" : "environment"; open(); };
   $("camStop").onclick = () => {
+    clearInterval(beat);
     link?.stop?.(); stream?.getTracks().forEach((t) => t.stop());
     set("중지했습니다. 새로고침하면 다시 붙습니다.");
   };
@@ -208,7 +214,8 @@ function fail(text) {
 
 /* 실행 중에만 보이는 조작 */
 function showRunControls(on) {
-  for (const id of ["btnSource", "btnDispatch", "vr1", "btnHeat", "btnBox", "everySel"]) {
+  for (const id of ["btnSource", "btnDispatch", "vr1", "btnHeat", "btnBox",
+                    "btnRot", "everySel"]) {
     $(id).hidden = !on;
   }
 }
@@ -254,14 +261,15 @@ function drawLoop() {
     const now = performance.now() / 1000;
     if (S.lastT) S.fps = S.fps * 0.85 + (1 / Math.max(1e-3, now - S.lastT)) * 0.15;
     S.lastT = now;
+    const src = uprightFrame(v);
     const r = S.view;
     if (r) {
-      drawView(v, v.videoWidth, v.videoHeight, S.lastPeople, r.roi);
+      drawView(src, src.width, src.height, S.lastPeople, r.roi);
       drawTac(r.pic);
       drawTrend();
       writePanels(r.roi, r.pic);
     } else {
-      drawView(v, v.videoWidth, v.videoHeight, [], null);
+      drawView(src, src.width, src.height, [], null);
     }
   }
   requestAnimationFrame(drawLoop);
@@ -270,10 +278,10 @@ function drawLoop() {
 async function detectLoop() {
   while (S.running) {
     const v = $("video");
-    if (v.readyState < 2 || !v.videoWidth) { await sleep(60); continue; }
+    if (v.readyState < 2 || !v.videoWidth || !srcCv.width) { await sleep(60); continue; }
     const t0 = performance.now();
     try {
-      const preds = await S.det.detect(v, 0.3, 0.45);
+      const preds = await S.det.detect(srcCv, 0.3, 0.45);
       S.lastPeople = preds.map((p) => ({
         x: p.bbox[0] + p.bbox[2] / 2, y: p.bbox[1] + p.bbox[3],
         boxH: p.bbox[3], bbox: p.bbox,
@@ -282,7 +290,7 @@ async function detectLoop() {
     const dt = (performance.now() - t0) / 1000;
     S.dps = S.dps ? S.dps * 0.8 + (1 / Math.max(1e-3, dt)) * 0.2 : 1 / dt;
 
-    analyse(v.videoWidth, v.videoHeight, performance.now() / 1000);
+    analyse(srcCv.width, srcCv.height, performance.now() / 1000);
     if (S.every > 1) await sleep((S.every - 1) * 1000 / 30);
     else await sleep(0);
   }
@@ -321,6 +329,28 @@ function analyse(W, H, now) {
 }
 
 const push = (a, v) => { a.push(v); if (a.length > 240) a.shift(); };
+
+/* ── 영상 방향 ──
+ * 폰 카메라는 센서 방향 그대로 보내고, 그 방향 정보는 WebRTC 를 타고 넘어오지
+ * 않는다. 그래서 폰을 가로로 들어도 세로 영상이 도착한다. 받는 쪽에서 세워
+ * 놓은 뒤 검출과 표시 모두 이 캔버스를 쓴다.
+ */
+const srcCv = document.createElement("canvas");
+const srcCtx = srcCv.getContext("2d");
+
+function uprightFrame(v) {
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const rot = ((S.rot % 360) + 360) % 360;
+  const swap = rot === 90 || rot === 270;
+  const w = swap ? vh : vw, h = swap ? vw : vh;
+  if (srcCv.width !== w || srcCv.height !== h) { srcCv.width = w; srcCv.height = h; }
+  srcCtx.save();
+  srcCtx.translate(w / 2, h / 2);
+  srcCtx.rotate((rot * Math.PI) / 180);
+  srcCtx.drawImage(v, -vw / 2, -vh / 2);
+  srcCtx.restore();
+  return srcCv;
+}
 
 /* ── 영상 + 히트맵 ── */
 const heatCv = document.createElement("canvas");
@@ -377,8 +407,12 @@ function drawView(v, W, H, people, roi) {
   const L = V.levelInfo(roi.level);
   ctx.font = `600 ${fs * 0.78}px ${FONT}`;
   ctx.fillStyle = L.color; ctx.fillText(V.levelTag(roi.level), 18, 18 + fs * 1.25);
+  const v0 = $("video");
+  const raw = v0.videoWidth ? `${v0.videoWidth}×${v0.videoHeight}` : "";
+  const shown = `${W}×${H}`;
   $("camInfo").textContent =
-    `${W}×${H} · 화면 ${S.fps.toFixed(0)}fps · 검출 ${(S.dps || 0).toFixed(1)}/s`
+    (raw && raw !== shown ? `${raw} → ${shown}` : shown)
+    + ` · 화면 ${S.fps.toFixed(0)}fps · 검출 ${(S.dps || 0).toFixed(1)}/s`
     + (S.det ? ` · ${S.det.backend}` : "");
 }
 
@@ -594,6 +628,13 @@ function startPhoneLink() {
       $("pairState").textContent = "폰을 기다리는 중";
       clearTimeout(S.pairTimer);
     },
+    onStats(d) {
+      if (!d || typeof d !== "object" || typeof d.rot !== "number") return;
+      S.phoneRot = d.rot;
+      // 폰이 가로인데 세로 영상이 오면 세워 준다. 방향은 폰 각도로 정한다.
+      S.rot = (d.h > d.w && d.rot % 180 !== 0) ? (d.rot === 90 ? 270 : 90) : 0;
+      syncRotBtn();
+    },
     onState(st, detail) {
       const el = $("pairState");
       el.className = st === "error" ? "err" : "";
@@ -623,10 +664,17 @@ function startPhoneLink() {
 
 $("btnPhone").onclick = startPhoneLink;
 $("btnStart").onclick = startCam;
+function syncRotBtn() {
+  $("btnRot").textContent = S.rot ? `회전 ${S.rot}°` : "회전";
+  $("btnRot").setAttribute("aria-pressed", String(!!S.rot));
+}
+$("btnRot").onclick = () => { S.rot = (S.rot + 90) % 360; syncRotBtn(); };
+
 $("btnSource").onclick = () => {
   stopSrc(); S.link?.stop?.(); S.link = null;
   $("video").srcObject = null; $("video").src = "";
   S.running = false; S.lastPeople = []; S.view = null; S.dps = 0;
+  S.rot = 0; S.phoneRot = null; syncRotBtn();
   showRunControls(false);
   $("tacEmpty").hidden = false; $("tacCv").hidden = true;
   $("msnEmpty").hidden = false;
@@ -658,6 +706,7 @@ addEventListener("keydown", (e) => {
   else if (k === "h") $("btnHeat").click();
   else if (k === "b") $("btnBox").click();
   else if (k === "f") $("btnFull").click();
+  else if (k === "r" && !$("btnRot").hidden) $("btnRot").click();
 });
 /* ── 폰 : ?cam=CODE 로 열리면 카메라 모드 ── */
 async function runCameraMode(code) {
@@ -666,18 +715,20 @@ async function runCameraMode(code) {
   $("camCode").textContent = code;
   const stat = $("camStat"), prev = $("camPrev");
   const set = (t, cls = "") => { stat.textContent = t; stat.className = "camStat " + cls; };
-  let facing = "environment", stream = null, link = null;
+  let facing = "environment", stream = null, link = null, beat = 0;
 
   async function open() {
     try {
       stream?.getTracks().forEach((t) => t.stop());
       set("카메라 여는 중");
       // 가로 16:9 로 달라고 한다. 폰을 가로로 들면 PC 화면을 꽉 채운다.
+      // aspectRatio 를 걸면 폰이 센서 방향 기준으로 해석해 세로 16:9(540x960)
+      // 같은 결과가 나온다. 크기만 요청하고 방향은 받는 쪽에서 세운다.
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: facing },
-          width: { ideal: 1920 }, height: { ideal: 1080 },
-          aspectRatio: { ideal: 16 / 9 },
+          width: { ideal: 1280 }, height: { ideal: 720 },
+          frameRate: { ideal: 24 },
         },
         audio: false,
       });
@@ -709,19 +760,23 @@ async function runCameraMode(code) {
     const check = () => {
       const w = video.videoWidth, h = video.videoHeight;
       if (!w || !h) return;
-      $("rotHint").classList.toggle("on", h > w);
-      const track = stream.getVideoTracks()[0];
-      const st = track?.getSettings?.() || {};
-      $("camBack").dataset.size = `${st.width || w}x${st.height || h}`;
+      // 센서 방향은 WebRTC 로 넘어가지 않는다. 각도를 직접 보내 화면 쪽에서 세운다.
+      const ang = (screen.orientation?.angle ?? window.orientation ?? 0) | 0;
+      $("rotHint").classList.toggle("on", h > w && ang % 180 === 0);
+      link?.send?.({ rot: ang, w, h });
     };
     video.addEventListener("loadedmetadata", check);
     video.addEventListener("resize", check);
-    addEventListener("orientationchange", () => setTimeout(check, 400));
+    screen.orientation?.addEventListener?.("change", () => setTimeout(check, 350));
+    addEventListener("orientationchange", () => setTimeout(check, 350));
+    clearInterval(beat);
+    beat = setInterval(check, 2000);  // 연결이 늦게 붙어도 전달되게
     check();
   }
 
   $("camFlip").onclick = () => { facing = facing === "environment" ? "user" : "environment"; open(); };
   $("camStop").onclick = () => {
+    clearInterval(beat);
     link?.stop?.(); stream?.getTracks().forEach((t) => t.stop());
     set("중지했습니다. 새로고침하면 다시 붙습니다.");
   };

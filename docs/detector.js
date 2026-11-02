@@ -56,10 +56,11 @@ export class Detector {
     throw new Error(last?.message || "추론 엔진을 초기화하지 못했습니다");
   }
 
-  /* 영상 한 장 → 사람 박스. conf/iou 는 파이썬 기본값과 같다. */
-  async detect(video, conf = 0.3, iouThr = 0.45, maxBoxes = 100) {
+  /* 영상 한 장 → 사람 박스. src 는 <video> 도 <canvas> 도 된다.
+   * 방향을 바로잡은 캔버스를 넘기면 검출도 그 방향으로 돈다. */
+  async detect(src, conf = 0.3, iouThr = 0.45, maxBoxes = 100) {
     if (!this.session) return [];
-    const W = video.videoWidth, H = video.videoHeight;
+    const W = src.videoWidth || src.width, H = src.videoHeight || src.height;
     if (!W || !H) return [];
 
     const r = Math.min(INPUT / W, INPUT / H);
@@ -68,7 +69,7 @@ export class Detector {
 
     this.ctx.fillStyle = "#727272";                 // 114,114,114
     this.ctx.fillRect(0, 0, INPUT, INPUT);
-    this.ctx.drawImage(video, dx, dy, nw, nh);
+    this.ctx.drawImage(src, dx, dy, nw, nh);
     const px = this.ctx.getImageData(0, 0, INPUT, INPUT).data;
 
     const n = INPUT * INPUT, f = this.input;
