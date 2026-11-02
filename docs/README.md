@@ -8,14 +8,26 @@ https://kennykimtang.github.io/shepherdron/
 | 파일 | 내용 |
 |---|---|
 | `vision.js` | KDE 밀집도 · ROI 면적 · 등급 · 전술 투영 · 유도 방향 · 임무 상태기계 |
-| `app.js` | 카메라 · 검출(coco-ssd) · 화면 그리기 |
+| `detector.js` | YOLOv8n 사람 검출 (onnxruntime-web, WebGPU → WASM) |
+| `link.js` | 폰 ↔ PC WebRTC 연결 · QR |
+| `app.js` | 화면 그리기 · 조작 |
+| `yolov8n.onnx` | 노트북 파이썬판과 같은 가중치 (12 MB) |
+
+쓰는 방법 세 가지
+
+| 모드 | 쓸 곳 |
+|---|---|
+| 폰 카메라 연결 | 발표장 PC 가 화면, 폰이 카메라. QR 을 찍으면 붙는다 |
+| 이 기기 카메라 | 한 기기에서 전부 |
+| 영상 파일 | 녹화본으로 같은 처리 |
 
 `vision.js` 는 저장소의 `vision/density_field.py`, `vision/tactical.py`,
 `flight/mission.py` 를 옮긴 것입니다. 같은 수식을 써야 노트북 결과와
 브라우저 결과가 어긋나지 않습니다. 브라우저 API 를 쓰지 않으므로
 node 로 검증할 수 있습니다.
 
-검출 모델만 다릅니다. 웹은 coco-ssd, 노트북은 YOLOv8n 입니다.
-사람 박스를 내는 역할은 같고 그 뒤 판단은 전부 같습니다.
+검출도 같은 YOLOv8n 가중치입니다. `scripts/export_web_model.py` 로
+ONNX 를 다시 내보낼 수 있습니다. 전처리·후처리는 ultralytics 결과와
+대조해 맞췄습니다 (bus.jpg 양쪽 4명, IoU 0.90~0.98, 좌표 오차 1.6~12 px).
 
 운용 절차는 [DEMO.md](../DEMO.md) 를 보세요.
