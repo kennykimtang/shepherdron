@@ -8,12 +8,14 @@
 export const PERSON_H_M = 1.7;
 export const DEFAULT_TIERS = [1, 2, 3, 4];
 
+/* 등급 색. 채도를 낮춰 한 계열로 읽히게 맞췄다. 히트맵도 같은 값을 쓰므로
+ * 화면의 색과 범례가 어긋나지 않는다. */
 export const LEVELS = [
-  { n: 0, name: "안전", color: "#2E9E4F" },
-  { n: 1, name: "관심", color: "#5B6BD6" },
-  { n: 2, name: "주의", color: "#E0B32A" },
-  { n: 3, name: "경계", color: "#E07B2A" },
-  { n: 4, name: "심각", color: "#D14437" },
+  { n: 0, name: "안전", color: "#8A9199" },
+  { n: 1, name: "관심", color: "#5B82A8" },
+  { n: 2, name: "주의", color: "#B08A2E" },
+  { n: 3, name: "경계", color: "#B96E36" },
+  { n: 4, name: "심각", color: "#A84038" },
 ];
 
 export const levelOf = (d, tiers = DEFAULT_TIERS) =>

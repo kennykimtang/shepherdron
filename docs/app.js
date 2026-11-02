@@ -8,8 +8,25 @@ import { hostDisplay, joinAsCamera, cameraUrl, drawQr, readCode } from "./link.j
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const LIME = "#C8F542", LIME_DIM = "#5F7323", ROI_C = "#D9C27A";
-const FG3 = "#5C636B", LINE = "#2A2F35";
+/* 색은 CSS 토큰에서 읽는다. 캔버스가 라이트/다크 테마를 따라가게 하려는 것이다. */
+const T = {};
+function readTokens() {
+  const cs = getComputedStyle(document.documentElement);
+  const g = (k, f) => (cs.getPropertyValue(k).trim() || f);
+  T.accent = g("--accent", "#2A6AB0");
+  T.ink = g("--ink", "#1D2125");
+  T.ink2 = g("--ink2", "#5A6169");
+  T.ink3 = g("--ink3", "#8A9199");
+  T.edge = g("--edge", "#E2E4E8");
+  T.edge2 = g("--edge2", "#EDEEF1");
+  T.card = g("--card", "#FFFFFF");
+  T.soft = g("--accent-soft", "#EAF1F9");
+  T.sunk = g("--sunk", "#FAFAFB");
+  T.video = g("--video", "#121417");
+}
+const FONT = '"Pretendard Variable","Pretendard",system-ui,sans-serif';
+readTokens();
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", readTokens);
 
 const S = {
   running: false, stream: null, model: null,
@@ -21,12 +38,17 @@ const S = {
   peaks: [], counts: [], levels: [], active: [],
   log: [], lastMsn: "IDLE", lastLv: 0,
   fps: 0, lastT: 0, srcLabel: "대기", live: false, lastActive: false,
-  det: null, link: null, every: 1, tick: 0, lastPeople: [], pairTimer: 0,
+  det: null, link: null, every: 1, lastPeople: [], pairTimer: 0,
+  view: null, dps: 0,
 };
 
 /* ── 밀집도 컬러맵 (파이썬과 같은 정지점) ── */
-const STOPS = [[0, "#10307A"], [0.18, "#1E7FA8"], [0.38, "#2E9E4F"],
-               [0.58, "#C9D62B"], [0.76, "#E8A32A"], [1.0, "#D83A2B"], [1.5, "#8E1B13"]];
+/* 히트맵 램프는 등급 색(vision.js LEVELS)을 그대로 쓴다. 화면의 색과 범례가
+ * 어긋나지 않아야 관객이 색을 읽을 수 있다. 0 = 1단계 경계, 1 = 마지막 경계. */
+const STOPS = [
+  [0.00, V.LEVELS[0].color], [0.25, V.LEVELS[1].color], [0.50, V.LEVELS[2].color],
+  [0.75, V.LEVELS[3].color], [1.00, V.LEVELS[4].color], [1.50, "#7E2F29"],
+];
 const LUT_MAX = 1.5;
 const hex = (c) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
 const LUT = (() => {
@@ -91,12 +113,18 @@ async function runCameraMode(code) {
     try {
       stream?.getTracks().forEach((t) => t.stop());
       set("카메라 여는 중");
+      // 가로 16:9 로 달라고 한다. 폰을 가로로 들면 PC 화면을 꽉 채운다.
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          facingMode: { ideal: facing },
+          width: { ideal: 1920 }, height: { ideal: 1080 },
+          aspectRatio: { ideal: 16 / 9 },
+        },
         audio: false,
       });
       prev.srcObject = stream;
       await prev.play().catch(() => {});
+      watchOrientation(prev, stream);
       link?.stop?.();
       set("화면을 찾는 중");
       link = joinAsCamera(code, stream, {
@@ -117,6 +145,22 @@ async function runCameraMode(code) {
       set(`카메라를 열지 못했습니다 (${e.name}). 권한을 허용한 뒤 새로고침하세요.`, "err");
     }
   }
+  /* 세로로 들고 있으면 PC 쪽에 세로 영상이 가서 양옆이 비어 보인다. */
+  function watchOrientation(video, stream) {
+    const check = () => {
+      const w = video.videoWidth, h = video.videoHeight;
+      if (!w || !h) return;
+      $("rotHint").classList.toggle("on", h > w);
+      const track = stream.getVideoTracks()[0];
+      const st = track?.getSettings?.() || {};
+      $("camBack").dataset.size = `${st.width || w}x${st.height || h}`;
+    };
+    video.addEventListener("loadedmetadata", check);
+    video.addEventListener("resize", check);
+    addEventListener("orientationchange", () => setTimeout(check, 400));
+    check();
+  }
+
   $("camFlip").onclick = () => { facing = facing === "environment" ? "user" : "environment"; open(); };
   $("camStop").onclick = () => {
     link?.stop?.(); stream?.getTracks().forEach((t) => t.stop());
@@ -176,89 +220,111 @@ async function begin() {
     note("준비 중");
     try { S.det = await new Detector().load(note); }
     catch (e) { return fail(`인식 모델을 준비하지 못했습니다. ${e.message}`); }
-    addLog(`YOLOv8n ${S.det.backend}`, "준비");
+    addLog(`검출 준비 · YOLOv8n ${S.det.backend}`);
   }
   stage(null);
   showRunControls(true);
   $("tacEmpty").hidden = true; $("tacCv").hidden = false;
   $("msnEmpty").hidden = true;
-  if (!S.running) { S.running = true; loop(); }
+  if (!S.running) { S.running = true; drawLoop(); detectLoop(); }
 }
 
 /* ── 로그 ── */
-function addLog(text, tag, bg = "#2A3036", fg = "#C5CBD1") {
+function addLog(text, color) {
   const d = new Date();
   const t = [d.getHours(), d.getMinutes(), d.getSeconds()]
     .map((n) => String(n).padStart(2, "0")).join(":");
-  S.log.unshift({ t, text, tag, bg, fg });
+  S.log.unshift({ t, text, color: color || T.ink3 });
   if (S.log.length > 40) S.log.pop();
-  $("logRt").textContent = S.log.length;
+  $("logRt").textContent = `${S.log.length}건`;
   $("logEmpty").hidden = true;
   $("logList").innerHTML = S.log.map((e) =>
     `<div class="e"><time>${e.t}</time>` +
-    `<span class="t" style="background:${e.bg};color:${e.fg}">${esc(e.tag)}</span>` +
+    `<span class="dot" style="background:${e.color}"></span>` +
     `<span class="x">${esc(e.text)}</span></div>`).join("");
 }
 
-/* ── 메인 루프 ── */
-async function loop() {
+/* ── 루프 ──
+ * 그리기와 검출을 분리한다. 한 루프에서 await 로 묶으면 검출이 느린 만큼
+ * 영상도 멈춰 버린다. 검출은 되는 대로 돌리고, 화면은 마지막 결과를 쓴다.
+ */
+function drawLoop() {
   const v = $("video");
-  if (v.readyState >= 2 && v.videoWidth) {
+  if (S.running && v.readyState >= 2 && v.videoWidth) {
     const now = performance.now() / 1000;
-    if (S.lastT) S.fps = S.fps * 0.8 + (1 / Math.max(1e-3, now - S.lastT)) * 0.2;
+    if (S.lastT) S.fps = S.fps * 0.85 + (1 / Math.max(1e-3, now - S.lastT)) * 0.15;
     S.lastT = now;
-
-    // 느린 PC 에서는 검출을 건너뛰고 영상만 부드럽게 흐르게 한다
-    if (S.tick++ % S.every === 0) {
-      try {
-        const preds = await S.det.detect(v, 0.3, 0.45);
-        S.lastPeople = preds.map((p) => ({
-          x: p.bbox[0] + p.bbox[2] / 2, y: p.bbox[1] + p.bbox[3],
-          boxH: p.bbox[3], bbox: p.bbox,
-        }));
-      } catch (_) {}
+    const r = S.view;
+    if (r) {
+      drawView(v, v.videoWidth, v.videoHeight, S.lastPeople, r.roi);
+      drawTac(r.pic);
+      drawTrend();
+      writePanels(r.roi, r.pic);
+    } else {
+      drawView(v, v.videoWidth, v.videoHeight, [], null);
     }
-    const people = S.lastPeople;
-
-    const W = v.videoWidth, H = v.videoHeight;
-    const field = V.densityField(people, S.sigma);
-    const roi = V.analyzeRoi(field, S.roi, W, H, { tiers: S.tiers, areaM2: S.areaM2 });
-    roi.level = S.level.update(roi.level);
-    const pic = V.buildPicture(people, W, S.sigma, S.hfov);
-
-    const raw = roi.level >= 3;
-    const active = S.alert.update(raw, now);
-    S.mission.update(active && !S.lastActive, active, roi.count, pic.hotspot, now);
-    S.lastActive = active;
-
-    push(S.peaks, roi.peakDensity); push(S.counts, roi.count);
-    push(S.levels, roi.level); push(S.active, S.mission.state !== "IDLE");
-
-    if (roi.level !== S.lastLv) {
-      const L = V.levelInfo(roi.level);
-      addLog(`국부 최대 ${roi.peakDensity.toFixed(1)} 명/㎡`,
-             V.levelTag(roi.level), L.color, "#101214");
-      S.lastLv = roi.level;
-    }
-    if (S.mission.state !== S.lastMsn) {
-      addLog(S.mission.reason, V.MISSION[S.mission.state], LIME, "#101214");
-      S.lastMsn = S.mission.state;
-    }
-
-    S.link?.report?.({ n: roi.count, peak: +roi.peakDensity.toFixed(2),
-                       lv: V.levelTag(roi.level), msn: V.MISSION[S.mission.state] });
-    drawView(v, W, H, people, field, roi);
-    drawTac(pic);
-    drawTrend();
-    writePanels(roi, pic);
   }
-  requestAnimationFrame(loop);
+  requestAnimationFrame(drawLoop);
 }
+
+async function detectLoop() {
+  while (S.running) {
+    const v = $("video");
+    if (v.readyState < 2 || !v.videoWidth) { await sleep(60); continue; }
+    const t0 = performance.now();
+    try {
+      const preds = await S.det.detect(v, 0.3, 0.45);
+      S.lastPeople = preds.map((p) => ({
+        x: p.bbox[0] + p.bbox[2] / 2, y: p.bbox[1] + p.bbox[3],
+        boxH: p.bbox[3], bbox: p.bbox,
+      }));
+    } catch (_) { await sleep(120); continue; }
+    const dt = (performance.now() - t0) / 1000;
+    S.dps = S.dps ? S.dps * 0.8 + (1 / Math.max(1e-3, dt)) * 0.2 : 1 / dt;
+
+    analyse(v.videoWidth, v.videoHeight, performance.now() / 1000);
+    if (S.every > 1) await sleep((S.every - 1) * 1000 / 30);
+    else await sleep(0);
+  }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* 검출 결과 한 벌에 대한 판단. 화면 그리기와 분리돼 있다. */
+function analyse(W, H, now) {
+  const people = S.lastPeople;
+  const field = V.densityField(people, S.sigma);
+  const roi = V.analyzeRoi(field, S.roi, W, H, { tiers: S.tiers, areaM2: S.areaM2 });
+  roi.level = S.level.update(roi.level);
+  const pic = V.buildPicture(people, W, S.sigma, S.hfov);
+
+  const active = S.alert.update(roi.level >= 3, now);
+  S.mission.update(active && !S.lastActive, active, roi.count, pic.hotspot, now);
+  S.lastActive = active;
+
+  push(S.peaks, roi.peakDensity); push(S.counts, roi.count);
+  push(S.levels, roi.level); push(S.active, S.mission.state !== "IDLE");
+
+  if (roi.level !== S.lastLv) {
+    const L = V.levelInfo(roi.level);
+    addLog(`${V.levelTag(roi.level)} · 국부 최대 ${roi.peakDensity.toFixed(1)} 명/㎡`,
+           L.color);
+    S.lastLv = roi.level;
+  }
+  if (S.mission.state !== S.lastMsn) {
+    addLog(`임무 ${V.MISSION[S.mission.state]} · ${S.mission.reason}`, T.accent);
+    S.lastMsn = S.mission.state;
+  }
+  S.link?.report?.({ n: roi.count, peak: +roi.peakDensity.toFixed(2),
+                     lv: V.levelTag(roi.level), msn: V.MISSION[S.mission.state] });
+  S.view = { roi, pic, field };
+}
+
 const push = (a, v) => { a.push(v); if (a.length > 240) a.shift(); };
 
 /* ── 영상 + 히트맵 ── */
 const heatCv = document.createElement("canvas");
-function drawView(v, W, H, people, field, roi) {
+function drawView(v, W, H, people, roi) {
   const cv = $("view"), ctx = cv.getContext("2d");
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
   ctx.drawImage(v, 0, 0, W, H);
@@ -280,8 +346,9 @@ function drawView(v, W, H, people, field, roi) {
     ctx.drawImage(heatCv, 0, 0, W, H);
   }
 
+  if (!roi) { $("camInfo").textContent = `${W}×${H}`; return; }
   if (roi.polygon?.length >= 3 && S.roi) {
-    ctx.strokeStyle = ROI_C; ctx.lineWidth = Math.max(2, W / 640);
+    ctx.strokeStyle = T.ink3; ctx.lineWidth = Math.max(2, W / 640);
     ctx.beginPath();
     roi.polygon.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
     ctx.closePath(); ctx.stroke();
@@ -294,7 +361,7 @@ function drawView(v, W, H, people, field, roi) {
   }
   if (roi.peakPoint && roi.level >= 3) {
     const [tx, ty] = roi.peakPoint, r = W / 24;
-    ctx.strokeStyle = LIME; ctx.lineWidth = Math.max(2, W / 550);
+    ctx.strokeStyle = T.accent; ctx.lineWidth = Math.max(2, W / 550);
     ctx.beginPath(); ctx.arc(tx, ty, r, 0, 7); ctx.stroke();
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       ctx.beginPath(); ctx.moveTo(tx + dx * r * 0.45, ty + dy * r * 0.45);
@@ -303,27 +370,27 @@ function drawView(v, W, H, people, field, roi) {
   }
   // 영상 내 표기
   const fs = Math.max(13, W / 46);
-  ctx.font = `600 ${fs}px "IBM Plex Mono",monospace`;
+  ctx.font = `700 ${fs}px ${FONT}`;
   ctx.fillStyle = "rgba(0,0,0,.45)"; ctx.fillRect(10, 10, fs * 7.2, fs * 2.5);
   ctx.fillStyle = "#fff"; ctx.textBaseline = "top";
   ctx.fillText(`TOTAL ${roi.count}`, 18, 16);
   const L = V.levelInfo(roi.level);
-  ctx.font = `700 ${fs * 0.8}px "IBM Plex Sans KR",sans-serif`;
+  ctx.font = `600 ${fs * 0.78}px ${FONT}`;
   ctx.fillStyle = L.color; ctx.fillText(V.levelTag(roi.level), 18, 18 + fs * 1.25);
   $("camInfo").textContent =
-    `${W}×${H}  ${S.fps.toFixed(1)}fps  ${S.det?.backend || ""}` +
-    (S.every > 1 ? `  1/${S.every}` : "");
+    `${W}×${H} · 화면 ${S.fps.toFixed(0)}fps · 검출 ${(S.dps || 0).toFixed(1)}/s`
+    + (S.det ? ` · ${S.det.backend}` : "");
 }
 
 /* ── 전술 지도 ── */
 function drawTac(pic) {
   const cv = $("tacCv"), box = cv.parentElement.getBoundingClientRect();
-  const w = Math.max(240, Math.floor(box.width)), h = Math.round(w * 0.92);
+  const w = Math.max(240, Math.floor(box.width)), h = Math.round(w * 0.88);
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + "px"; }
   const g = cv.getContext("2d");
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.fillStyle = "#101215"; g.fillRect(0, 0, w, h);
+  g.fillStyle = T.card; g.fillRect(0, 0, w, h);
 
   const D = S.mission;
   let need = 8;
@@ -342,15 +409,15 @@ function drawTac(pic) {
   const P = (r, f) => [ox + r * ppm, oy - f * ppm];
 
   const half = (S.hfov / 2) * Math.PI / 180, far = rmax * 1.2;
-  g.fillStyle = "#171B20"; g.beginPath(); g.moveTo(...P(0, 0));
+  g.fillStyle = T.sunk; g.beginPath(); g.moveTo(...P(0, 0));
   g.lineTo(...P(-far * Math.sin(half), far * Math.cos(half)));
   g.lineTo(...P(far * Math.sin(half), far * Math.cos(half)));
   g.closePath(); g.fill();
 
-  g.strokeStyle = LINE; g.lineWidth = 1;
+  g.strokeStyle = T.edge; g.lineWidth = 1;
   for (let r = step; r <= rmax + 1e-6; r += step) {
     g.beginPath(); g.arc(ox, oy, r * ppm, Math.PI, 2 * Math.PI); g.stroke();
-    g.fillStyle = FG3; g.font = '11px "IBM Plex Mono",monospace'; g.textAlign = "right";
+    g.fillStyle = T.ink3; g.font = `11px ${FONT}`; g.textAlign = "right";
     const [lx, ly] = P(-r * Math.sin(half) - 0.1, r * Math.cos(half));
     g.fillText(`${r}m`, lx - 4, ly + 4);
   }
@@ -375,7 +442,7 @@ function drawTac(pic) {
       const d = Math.max(1, Math.hypot(ex - hx2, ey - hy2));
       const ux = (ex - hx2) / d, uy = (ey - hy2) / d;
       const a0 = 1.5 * ppm + 6, a1 = a0 + Math.max(40, 2.2 * ppm);
-      g.strokeStyle = LIME; g.lineWidth = 3.5; g.beginPath();
+      g.strokeStyle = T.accent; g.lineWidth = 3.5; g.beginPath();
       g.moveTo(hx2 + ux * a0, hy2 + uy * a0); g.lineTo(hx2 + ux * a1, hy2 + uy * a1); g.stroke();
       const ang = Math.atan2(uy, ux);
       for (const s of [1, -1]) {
@@ -383,7 +450,7 @@ function drawTac(pic) {
         g.beginPath(); g.moveTo(hx2 + ux * a1, hy2 + uy * a1);
         g.lineTo(hx2 + ux * a1 + 13 * Math.cos(b), hy2 + uy * a1 + 13 * Math.sin(b)); g.stroke();
       }
-      g.fillStyle = LIME; g.font = '600 13px "IBM Plex Sans KR",sans-serif';
+      g.fillStyle = T.accent; g.font = `600 13px ${FONT}`;
       g.textAlign = ux >= -0.2 ? "left" : "right";
       g.fillText(`유도 ${ev.name}`, hx2 + ux * (a1 + 12), hy2 + uy * (a1 + 12) + 4);
       g.textAlign = "left";
@@ -391,26 +458,26 @@ function drawTac(pic) {
   }
   // 이륙 지점 · 기체
   const [h0x, h0y] = P(0, 0);
-  g.strokeStyle = FG3; g.lineWidth = 1;
+  g.strokeStyle = T.ink3; g.lineWidth = 1;
   g.beginPath(); g.arc(h0x, h0y, 8, 0, 7); g.stroke();
-  g.fillStyle = "#959CA5"; g.font = '10px "IBM Plex Mono",monospace'; g.textAlign = "center";
+  g.fillStyle = T.ink3; g.font = `11px ${FONT}`; g.textAlign = "center";
   g.fillText("H", h0x, h0y + 3.5); g.fillText("CAM · 이륙점", h0x, h0y + 20);
   g.textAlign = "left";
 
   if (D.trail.length > 1) {
-    g.strokeStyle = LIME_DIM; g.lineWidth = 1; g.beginPath();
+    g.strokeStyle = T.accent; g.globalAlpha = 0.35; g.lineWidth = 1.5; g.beginPath();
     D.trail.forEach(([r, f], i) => { const [x, y] = P(r, f); i ? g.lineTo(x, y) : g.moveTo(x, y); });
-    g.stroke();
+    g.stroke(); g.globalAlpha = 1;
   }
   if (D.flying) {
     const [dx, dy] = P(...D.pos);
     if (D.state === "NAVIGATING" && D.goal) {
       const [gx, gy] = P(...D.goal);
-      g.strokeStyle = LIME; g.setLineDash([7, 5]); g.lineWidth = 2;
+      g.strokeStyle = T.accent; g.setLineDash([7, 5]); g.lineWidth = 2;
       g.beginPath(); g.moveTo(dx, dy); g.lineTo(gx, gy); g.stroke(); g.setLineDash([]);
     }
     const a = (D.heading * Math.PI) / 180;
-    g.strokeStyle = LIME; g.lineWidth = 2;
+    g.strokeStyle = T.accent; g.lineWidth = 2;
     for (let k = 0; k < 4; k++) {
       const an = a + (45 + 90 * k) * Math.PI / 180;
       const ex = dx + 10 * Math.sin(an), ey = dy - 10 * Math.cos(an);
@@ -419,16 +486,19 @@ function drawTac(pic) {
     }
     g.beginPath(); g.moveTo(dx, dy);
     g.lineTo(dx + 15 * Math.sin(a), dy - 15 * Math.cos(a)); g.stroke();
-    g.fillStyle = LIME; g.font = '11px "IBM Plex Mono",monospace';
+    g.fillStyle = T.accent; g.font = `11px ${FONT}`;
     g.fillText(`${D.alt.toFixed(1)}m`, dx + 16, dy - 12);
   }
 }
 
 /* ── 추이 ── */
 function drawTrend() {
-  const cv = $("trendCv"), w = Math.floor(cv.parentElement.getBoundingClientRect().width);
-  const h = 68, dpr = Math.min(2, window.devicePixelRatio || 1);
-  if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const cv = $("trendCv"), w = Math.floor(cv.getBoundingClientRect().width);
+  const h = Math.floor(cv.getBoundingClientRect().height) || 72;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (cv.width !== w * dpr || cv.height !== h * dpr) {
+    cv.width = w * dpr; cv.height = h * dpr;
+  }
   const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, w, h);
   $("trendRt").textContent = `${S.peaks.length}F`;
@@ -442,13 +512,13 @@ function drawTrend() {
   S.tiers.forEach((t, i) => {
     g.strokeStyle = V.levelInfo(i + 1).color;
     g.beginPath(); g.moveTo(x1, Y(t)); g.lineTo(x2, Y(t)); g.stroke();
-    g.fillStyle = V.levelInfo(i + 1).color; g.font = '10px "IBM Plex Mono",monospace';
+    g.fillStyle = V.levelInfo(i + 1).color; g.font = `11px ${FONT}`;
     g.textAlign = "right"; g.fillText(String(t), x1 - 5, Y(t) + 3.5);
   });
   g.setLineDash([]); g.textAlign = "left";
-  g.strokeStyle = LINE; g.beginPath(); g.moveTo(x1, y2); g.lineTo(x2, y2); g.stroke();
+  g.strokeStyle = T.edge; g.beginPath(); g.moveTo(x1, y2); g.lineTo(x2, y2); g.stroke();
   for (let i = 0; i < n - 1; i++) {
-    if (S.active[i]) { g.fillStyle = LIME; g.fillRect(X(i), y2 + 3, Math.max(2, X(i + 1) - X(i)), 4); }
+    if (S.active[i]) { g.fillStyle = T.accent; g.fillRect(X(i), y2 + 3, Math.max(2, X(i + 1) - X(i)), 4); }
   }
   for (let i = 0; i < n - 1; i++) {
     g.strokeStyle = V.levelInfo(S.levels[i + 1]).color; g.lineWidth = 2;
@@ -465,7 +535,7 @@ function writePanels(roi, pic) {
   const L = V.levelInfo(roi.level);
   $("lvTxt").textContent = V.levelTag(roi.level); $("lvTxt").style.color = L.color;
   [...$("lvBar").children].forEach((el, i) => {
-    el.style.background = i <= roi.level ? V.levelInfo(i).color : "#20252A";
+    el.style.background = i <= roi.level ? V.levelInfo(i).color : T.edge;
   });
 
   const D = S.mission;
@@ -537,7 +607,15 @@ function startPhoneLink() {
       await v.play().catch(() => {});
       S.srcLabel = "폰 카메라"; S.live = true;
       $("camName").textContent = "폰 카메라";
-      addLog("폰 카메라가 붙었습니다", "연결", "#C8F542", "#101214");
+      const warn = () => {
+        const v2 = $("video");
+        if (v2.videoWidth && v2.videoHeight > v2.videoWidth) {
+          addLog("폰이 세로입니다. 가로로 돌리면 화면을 꽉 채웁니다");
+        }
+      };
+      v.addEventListener("loadedmetadata", warn, { once: true });
+      setTimeout(warn, 1200);
+      addLog("폰 카메라가 붙었습니다", T.accent);
       begin();
     },
   });
@@ -548,7 +626,7 @@ $("btnStart").onclick = startCam;
 $("btnSource").onclick = () => {
   stopSrc(); S.link?.stop?.(); S.link = null;
   $("video").srcObject = null; $("video").src = "";
-  S.running = false; S.lastPeople = [];
+  S.running = false; S.lastPeople = []; S.view = null; S.dps = 0;
   showRunControls(false);
   $("tacEmpty").hidden = false; $("tacCv").hidden = true;
   $("msnEmpty").hidden = false;
@@ -563,7 +641,7 @@ $("btnCopyUrl").onclick = async () => {
 };
 $("btnFile").onclick = () => $("file").click();
 $("file").onchange = (e) => e.target.files[0] && openFile(e.target.files[0]);
-$("btnDispatch").onclick = () => { S.mission.dispatch(); addLog("수동 출동", "임무", LIME, "#101214"); };
+$("btnDispatch").onclick = () => { S.mission.dispatch(); addLog("수동 출동", T.accent); };
 const toggle = (id, key) => {
   $(id).onclick = () => { S[key] = !S[key]; $(id).setAttribute("aria-pressed", String(S[key])); };
 };
@@ -594,12 +672,18 @@ async function runCameraMode(code) {
     try {
       stream?.getTracks().forEach((t) => t.stop());
       set("카메라 여는 중");
+      // 가로 16:9 로 달라고 한다. 폰을 가로로 들면 PC 화면을 꽉 채운다.
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          facingMode: { ideal: facing },
+          width: { ideal: 1920 }, height: { ideal: 1080 },
+          aspectRatio: { ideal: 16 / 9 },
+        },
         audio: false,
       });
       prev.srcObject = stream;
       await prev.play().catch(() => {});
+      watchOrientation(prev, stream);
       link?.stop?.();
       set("화면을 찾는 중");
       link = joinAsCamera(code, stream, {
@@ -620,6 +704,22 @@ async function runCameraMode(code) {
       set(`카메라를 열지 못했습니다 (${e.name}). 권한을 허용한 뒤 새로고침하세요.`, "err");
     }
   }
+  /* 세로로 들고 있으면 PC 쪽에 세로 영상이 가서 양옆이 비어 보인다. */
+  function watchOrientation(video, stream) {
+    const check = () => {
+      const w = video.videoWidth, h = video.videoHeight;
+      if (!w || !h) return;
+      $("rotHint").classList.toggle("on", h > w);
+      const track = stream.getVideoTracks()[0];
+      const st = track?.getSettings?.() || {};
+      $("camBack").dataset.size = `${st.width || w}x${st.height || h}`;
+    };
+    video.addEventListener("loadedmetadata", check);
+    video.addEventListener("resize", check);
+    addEventListener("orientationchange", () => setTimeout(check, 400));
+    check();
+  }
+
   $("camFlip").onclick = () => { facing = facing === "environment" ? "user" : "environment"; open(); };
   $("camStop").onclick = () => {
     link?.stop?.(); stream?.getTracks().forEach((t) => t.stop());

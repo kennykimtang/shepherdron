@@ -5,169 +5,201 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Shepherdron 군중 밀집도 관제</title>
 <meta name="description" content="브라우저에서 도는 군중 밀집도 인식과 드론 유도 판단. 폰을 카메라로, 발표장 PC를 화면으로 쓸 수 있습니다.">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/pretendardvariable.css">
 <style>
+/* 무채색 기반. 색은 등급(데이터)과 임무(드론)에만 쓴다. */
 :root{
-  --bg:#0B0C0E; --s1:#121417; --s2:#171A1E; --s3:#1E2227;
-  --hair:#1C2024; --line:#272C32;
-  --fg:#E6E8EA; --fg2:#9BA1A8; --fg3:#5E656C;
-  --lime:#C8F542;              /* 드론이 하는 일에만 */
-  --limeDim:#54661F;
-  --sans:"IBM Plex Sans KR","Apple SD Gothic Neo",system-ui,sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --page:#F5F6F7; --card:#FFFFFF; --sunk:#FAFAFB; --hover:#F0F1F3;
+  --edge:#E2E4E8; --edge2:#EDEEF1;
+  --ink:#1D2125; --ink2:#5A6169; --ink3:#8A9199;
+  --accent:#2A6AB0;                 /* 임무 · 기본 동작 */
+  --accent-soft:#EAF1F9;
+  --video:#121417;
+  --sans:"Pretendard Variable","Pretendard",-apple-system,BlinkMacSystemFont,
+         "Apple SD Gothic Neo",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --page:#15171A; --card:#1B1E22; --sunk:#1F2328; --hover:#242830;
+  --edge:#2C3137; --edge2:#23272C;
+  --ink:#E8EAEC; --ink2:#A2AAB2; --ink3:#767E86;
+  --accent:#6AA5E0; --accent-soft:#1E2A38;
+  --video:#000000;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --page:#15171A; --card:#1B1E22; --sunk:#1F2328; --hover:#242830;
+  --edge:#2C3137; --edge2:#23272C;
+  --ink:#E8EAEC; --ink2:#A2AAB2; --ink3:#767E86;
+  --accent:#6AA5E0; --accent-soft:#1E2A38;
+  --video:#000000;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
-[hidden]{display:none!important}          /* id 선택자에 밀리지 않게 */
+[hidden]{display:none!important}
 html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);
-     font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden}
-button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+body{margin:0;background:var(--page);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;letter-spacing:-.003em;
+  -webkit-font-smoothing:antialiased;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;letter-spacing:inherit}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
 #app{height:100%;display:grid;grid-template-rows:auto 1fr}
 
 /* 상단 */
-#top{display:flex;align-items:center;gap:12px;padding:9px 14px;background:var(--s1);
-     border-bottom:1px solid var(--line);flex-wrap:wrap}
-#mark{width:26px;height:26px;flex:0 0 26px}
-#top h1{margin:0;font-size:16px;font-weight:700;letter-spacing:.1em}
-#top .tag{font-size:13px;color:var(--fg3)}
-#bar{margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.tb{padding:5px 10px;font-size:13px;color:var(--fg2);border:1px solid transparent;border-radius:3px}
-.tb:hover{color:var(--fg);background:var(--s3)}
-.tb[aria-pressed="true"]{color:var(--fg);background:var(--s3);border-color:var(--line)}
-.tb.act{color:#101214;background:var(--lime);font-weight:600}
-.tb.act:hover{background:var(--lime)}
-.tb:focus-visible{outline:2px solid var(--lime);outline-offset:1px}
-select{background:var(--s2);border:1px solid var(--line);color:var(--fg2);border-radius:3px;
-       padding:5px 8px;font:inherit;font-size:12.5px}
-#clock{font-family:var(--mono);font-size:14px;color:var(--fg2);letter-spacing:.02em}
-.vr{width:1px;height:18px;background:var(--line)}
+#top{display:flex;align-items:center;gap:10px;padding:0 16px;height:52px;
+  background:var(--card);border-bottom:1px solid var(--edge);flex-wrap:nowrap}
+#mark{width:22px;height:22px;flex:0 0 22px}
+#top h1{margin:0;font-size:14.5px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+#top .tag{font-size:13px;color:var(--ink3);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;min-width:0}
+#bar{margin-left:auto;display:flex;align-items:center;gap:4px;flex:0 0 auto}
+.tb{padding:6px 11px;font-size:13px;color:var(--ink2);border-radius:6px;white-space:nowrap}
+.tb:hover{background:var(--hover);color:var(--ink)}
+.tb[aria-pressed="true"]{background:var(--hover);color:var(--ink);font-weight:500}
+.tb.act{background:var(--accent);color:#fff;font-weight:500}
+.tb.act:hover{background:var(--accent);filter:brightness(1.07)}
+.tb:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+select{background:var(--card);border:1px solid var(--edge);color:var(--ink2);
+  border-radius:6px;padding:5px 8px;font:inherit;font-size:12.5px}
+#clock{font-size:13px;color:var(--ink3);white-space:nowrap}
+.vr{width:1px;height:16px;background:var(--edge);margin:0 3px}
 
 /* 본문 */
-#main{display:grid;grid-template-columns:1fr minmax(290px,360px);gap:8px;padding:8px;min-height:0}
-#left,#right{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0}
-.card{background:var(--s1);border:1px solid var(--hair);min-width:0}
-.hd{display:flex;align-items:baseline;gap:8px;padding:7px 11px;border-bottom:1px solid var(--hair)}
-.hd .c{font-family:var(--mono);font-size:10.5px;color:var(--fg3);letter-spacing:.08em}
-.hd .n{font-size:13px;color:var(--fg2)}
-.hd .r{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--fg3)}
-.hd.d{border-left:2px solid var(--lime);padding-left:9px}
-.empty{padding:18px 12px;font-size:12.5px;color:var(--fg3);text-align:center}
+#main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:12px;
+  padding:12px;min-height:0}
+#left,#right{display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0}
+.card{background:var(--card);border:1px solid var(--edge);border-radius:8px;min-width:0}
+.hd{display:flex;align-items:center;gap:8px;padding:0 14px;height:40px;
+  border-bottom:1px solid var(--edge2)}
+.hd .n{font-size:13px;font-weight:600;color:var(--ink)}
+.hd .r{margin-left:auto;font-size:12px;color:var(--ink3)}
+.empty{padding:26px 16px;font-size:12.5px;color:var(--ink3);text-align:center}
 
-#stage{position:relative;flex:1 1 auto;min-height:0;background:#000;
-       display:flex;align-items:center;justify-content:center;overflow:hidden}
+#stage{position:relative;flex:1 1 auto;min-height:0;background:var(--video);
+  border-radius:0 0 7px 7px;display:flex;align-items:center;justify-content:center;
+  overflow:hidden}
 #view{max-width:100%;max-height:100%;display:block}
 #video{display:none}
 .ov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    padding:20px;overflow:auto}
+  padding:22px;overflow:auto;background:var(--card)}
 
 /* 소스 고르기 */
-#start .box{width:100%;max-width:420px}
-#start h2{margin:0 0 3px;font-size:15px;font-weight:600}
-#start .sub{margin:0 0 14px;font-size:13px;color:var(--fg3)}
-.pick{display:flex;flex-direction:column;gap:1px;background:var(--hair);
-      border:1px solid var(--hair)}
-.pick button{display:flex;align-items:baseline;gap:10px;padding:11px 13px;
-             background:var(--s2);text-align:left;width:100%}
-.pick button:hover{background:var(--s3)}
-.pick button:focus-visible{outline:2px solid var(--lime);outline-offset:-2px}
-.pick b{font-size:14px;font-weight:600;flex:0 0 auto}
-.pick span{font-size:12.5px;color:var(--fg3);min-width:0}
+#start .box{width:100%;max-width:400px}
+#start h2{margin:0 0 2px;font-size:15px;font-weight:600}
+#start .sub{margin:0 0 16px;font-size:13px;color:var(--ink3)}
+.pick{display:flex;flex-direction:column;gap:6px}
+.pick button{display:flex;flex-direction:column;gap:1px;padding:12px 14px;
+  border:1px solid var(--edge);border-radius:8px;text-align:left;width:100%;
+  background:var(--card)}
+.pick button:hover{background:var(--hover);border-color:var(--ink3)}
+.pick b{font-size:13.5px;font-weight:600}
+.pick span{font-size:12.5px;color:var(--ink3)}
 
 /* 페어링 */
-#pair .box{display:flex;gap:26px;align-items:center;max-width:720px;flex-wrap:wrap;
+#pair .box{display:flex;gap:28px;align-items:center;max-width:700px;flex-wrap:wrap;
   justify-content:center}
-#qr{width:min(304px,40vmin);flex:0 0 auto;aspect-ratio:1;background:#fff;
-    border-radius:3px;display:flex;align-items:center;justify-content:center;
-    image-rendering:pixelated}
-#qr .ph{font-size:12px;color:#5E656C}
-#qr svg{display:block}
-#pair .tx{flex:1 1 280px;min-width:260px;max-width:360px}
-#pair h2{margin:0 0 5px;font-size:15px;font-weight:600}
-#pair p{margin:0 0 12px;font-size:13px;color:var(--fg2)}
-#pair p.d{color:var(--fg3);font-size:12.5px;margin-bottom:6px}
-.codeRow{display:flex;align-items:baseline;gap:9px;margin-bottom:13px}
-.codeRow span{font-size:12px;color:var(--fg3)}
-.codeRow code{font-family:var(--mono);font-size:26px;letter-spacing:.18em;color:var(--fg)}
-.urlRow{display:flex;gap:6px;align-items:stretch;margin-bottom:12px}
-.urlRow code{font-family:var(--mono);font-size:11px;color:var(--fg2);background:var(--s2);
-  border:1px solid var(--line);border-radius:3px;padding:6px 8px;flex:1;min-width:0;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.urlRow button{padding:6px 11px;font-size:12.5px;background:var(--s2);
-  border:1px solid var(--line);border-radius:3px;color:var(--fg2)}
-.urlRow button:hover{color:var(--fg)}
-#pairState{font-size:12.5px;color:var(--fg3);margin:0}
-#pairState.err{color:#D98A80}
+#qr{width:min(290px,38vmin);flex:0 0 auto;aspect-ratio:1;background:#fff;
+  border:1px solid var(--edge);border-radius:8px;padding:6px;
+  display:flex;align-items:center;justify-content:center}
+#qr .ph{font-size:12px;color:#8A9199}
+#qr svg{display:block;width:100%;height:100%}
+#pair .tx{flex:1 1 270px;min-width:250px;max-width:340px}
+#pair h2{margin:0 0 6px;font-size:15px;font-weight:600}
+#pair p{margin:0 0 14px;font-size:13px;color:var(--ink2)}
+#pair p.d{color:var(--ink3);font-size:12.5px;margin-bottom:7px}
+.codeRow{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.codeRow span{font-size:12px;color:var(--ink3)}
+.codeRow code{font-family:var(--sans);font-size:24px;font-weight:600;
+  letter-spacing:.16em;font-variant-numeric:tabular-nums}
+.urlRow{display:flex;gap:6px;margin-bottom:12px}
+.urlRow code{font-family:var(--sans);font-size:12px;color:var(--ink2);
+  background:var(--sunk);border:1px solid var(--edge);border-radius:6px;
+  padding:7px 9px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.urlRow button{padding:7px 12px;font-size:12.5px;border:1px solid var(--edge);
+  border-radius:6px;color:var(--ink2)}
+.urlRow button:hover{background:var(--hover);color:var(--ink)}
+#pairState{font-size:12.5px;color:var(--ink3);margin:0}
+#pairState.err{color:#A84038}
 
-/* 안내 · 오류 */
-#msg{flex-direction:column;gap:8px;text-align:center;max-width:460px;margin:auto}
-#msg b{font-size:15px}
-#msg span{font-size:13px;color:var(--fg2)}
+#msg{flex-direction:column;gap:7px;text-align:center}
+#msg b{font-size:15px;font-weight:600}
+#msg span{font-size:13px;color:var(--ink2);max-width:420px}
 
 /* 수치 */
 #readout{display:grid;grid-template-columns:repeat(5,1fr)}
-#readout>div{padding:8px 12px;border-right:1px solid var(--hair);min-width:0}
+#readout>div{padding:11px 14px;border-right:1px solid var(--edge2);min-width:0}
 #readout>div:last-child{border-right:0}
-#readout .k{font-size:11.5px;color:var(--fg3)}
-#readout .v{font-family:var(--mono);font-size:24px;line-height:1.3;font-variant-numeric:tabular-nums}
-#readout .u{font-size:11px;color:var(--fg3);margin-left:2px}
-#lvBar{display:flex;gap:2px;margin:6px 0 4px}
-#lvBar i{height:5px;flex:1;background:#20252A}
-#lvTxt{font-size:13.5px;font-weight:600}
+#readout .k{font-size:12px;color:var(--ink3);margin-bottom:1px}
+#readout .v{font-size:23px;font-weight:600;line-height:1.25;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums}
+#readout .u{font-size:12px;font-weight:400;color:var(--ink3);margin-left:2px}
+#lvBar{display:flex;gap:2px;margin:7px 0 5px}
+#lvBar i{height:4px;flex:1;background:var(--edge);border-radius:2px}
+#lvTxt{font-size:13px;font-weight:600}
 
 #trend{flex:0 0 auto}
-#trendCv,#tacCv{display:block;width:100%}
-#track{display:flex;gap:3px;padding:9px 10px 0}
-#track div{flex:1;text-align:center;padding:5px 2px;font-size:12px;color:var(--fg3);
-           border:1px solid var(--line);min-width:0}
-#track div.on{background:var(--lime);color:#101214;border-color:var(--lime);font-weight:600}
-#track div.done{border-color:var(--limeDim);color:var(--limeDim)}
-#msnRows{padding:4px 10px 8px}
-#msnRows .r{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--hair);font-size:12.5px}
+#trendCv{display:block;width:100%;height:72px}
+#tacCv{display:block;width:100%}
+#track{display:flex;gap:4px;padding:12px 14px 0}
+#track div{flex:1;text-align:center;padding:5px 2px;font-size:11.5px;color:var(--ink3);
+  border:1px solid var(--edge);border-radius:5px;min-width:0}
+#track div.on{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
+#track div.done{background:var(--accent-soft);border-color:var(--accent-soft);color:var(--accent)}
+#msnRows{padding:6px 14px 10px}
+#msnRows .r{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--edge2);
+  font-size:12.5px}
 #msnRows .r:last-child{border-bottom:0}
-#msnRows .r b{flex:0 0 46px;color:var(--fg3);font-weight:400}
+#msnRows .r b{flex:0 0 44px;color:var(--ink3);font-weight:400}
 #msnRows .r span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#msnRows .r span.m{font-family:var(--mono);font-variant-numeric:tabular-nums}
-#msnRows .r span.hi{color:var(--lime)}
+#msnRows .r span.m{font-variant-numeric:tabular-nums}
+#msnRows .r span.hi{color:var(--accent);font-weight:600}
 #log{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
 #logList{overflow-y:auto;min-height:0}
-#logList .e{display:flex;gap:8px;align-items:baseline;padding:5px 11px;
-            border-bottom:1px solid var(--hair);font-size:12.5px}
-#logList time{font-family:var(--mono);font-size:10.5px;color:var(--fg3);flex:0 0 auto}
-#logList .t{font-size:10.5px;font-weight:600;padding:1px 5px;flex:0 0 auto;color:#101214}
-#logList .x{color:var(--fg2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#logList .e{display:flex;gap:9px;align-items:center;padding:8px 14px;
+  border-bottom:1px solid var(--edge2);font-size:12.5px}
+#logList time{font-size:11.5px;color:var(--ink3);flex:0 0 auto;
+  font-variant-numeric:tabular-nums}
+#logList .dot{width:6px;height:6px;border-radius:50%;flex:0 0 6px}
+#logList .x{color:var(--ink2);min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
 
 /* 폰 카메라 모드 */
-#camMode{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;
-  flex-direction:column;gap:11px;padding:16px;
+#camMode{position:fixed;inset:0;background:var(--page);z-index:50;display:flex;
+  flex-direction:column;gap:10px;padding:16px;
   padding-top:max(16px,env(safe-area-inset-top,0px));
   padding-bottom:max(16px,env(safe-area-inset-bottom,0px))}
-#camMode .h{display:flex;align-items:center;gap:9px}
-#camMode .h svg{width:24px;height:24px;flex:0 0 24px}
-#camMode .h b{font-size:15px;letter-spacing:.08em}
-#camMode .h span{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--fg3)}
-#camStat{font-size:14px;padding:9px 11px;background:var(--s1);
-  border:1px solid var(--line);border-left:2px solid var(--fg3)}
-#camStat.live{border-left-color:var(--lime)}
-#camStat.err{border-left-color:#D98A80;color:#D98A80}
-#camPrev{width:100%;flex:1 1 auto;min-height:0;object-fit:cover;background:#000;
-  border:1px solid var(--hair)}
-#camBack{font-family:var(--mono);font-size:12.5px;color:var(--fg2);padding:8px 11px;
-  background:var(--s1);border:1px solid var(--hair)}
+#camMode .h{display:flex;align-items:center;gap:8px}
+#camMode .h svg{width:20px;height:20px;flex:0 0 20px}
+#camMode .h b{font-size:14px;font-weight:700;letter-spacing:.02em}
+#camMode .h span{margin-left:auto;font-size:12.5px;color:var(--ink3);
+  letter-spacing:.1em;font-variant-numeric:tabular-nums}
+#camStat{font-size:13.5px;padding:11px 13px;background:var(--card);
+  border:1px solid var(--edge);border-radius:8px;font-weight:500}
+#camStat.live{color:var(--accent);border-color:var(--accent)}
+#camStat.err{color:#A84038;border-color:#A84038}
+#camPrev{width:100%;flex:1 1 auto;min-height:0;object-fit:cover;background:var(--video);
+  border-radius:8px}
+#camBack{font-size:12.5px;color:var(--ink2);padding:10px 13px;background:var(--card);
+  border:1px solid var(--edge);border-radius:8px;font-variant-numeric:tabular-nums}
 #camMode .btns{display:flex;gap:6px}
-#camMode .btns button{flex:1;padding:12px;font-size:14px;background:var(--s2);
-  border:1px solid var(--line);border-radius:3px;color:var(--fg2)}
-#camMode .btns button:hover{color:var(--fg)}
-#camMode .hint{margin:0;font-size:12px;color:var(--fg3)}
+#camMode .btns button{flex:1;padding:13px;font-size:14px;background:var(--card);
+  border:1px solid var(--edge);border-radius:8px;color:var(--ink2);font-weight:500}
+#camMode .btns button:hover{background:var(--hover);color:var(--ink)}
+#camMode .hint{margin:0;font-size:12px;color:var(--ink3)}
+#rotHint{display:none;font-size:12.5px;padding:10px 13px;border-radius:8px;
+  background:var(--accent-soft);color:var(--accent);font-weight:500}
+#rotHint.on{display:block}
 
-@media (max-width:880px){
+@media (max-width:980px){
   body{overflow:auto}
   #app{height:auto}
   #main{grid-template-columns:1fr}
-  #stage{height:44vh}
+  #stage{height:42vh}
   #readout{grid-template-columns:repeat(3,1fr)}
   #readout>div:nth-child(3n){border-right:0}
   #logList{max-height:200px}
+  #top .tag{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -175,7 +207,7 @@ select{background:var(--s2);border:1px solid var(--line);color:var(--fg2);border
 <body>
 <div id="app">
   <div id="top">
-    <svg id="mark" viewBox="0 0 48 48" fill="none" stroke="#C8F542" stroke-width="3" aria-hidden="true">
+    <svg id="mark" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true" style="color:var(--accent)">
       <path d="M14 16a7 7 0 0 1 14 0" stroke-linecap="round"/>
       <path d="M14 16v22M28 16v4" stroke-linecap="round"/>
       <circle cx="21" cy="30" r="4" stroke-width="1.6"/><circle cx="35" cy="30" r="4" stroke-width="1.6"/>
@@ -204,7 +236,7 @@ select{background:var(--s2);border:1px solid var(--line);color:var(--fg2);border
   <div id="main">
     <div id="left">
       <div class="card" style="flex:1 1 auto;display:flex;flex-direction:column;min-height:0">
-        <div class="hd"><span class="c">CAM</span><span class="n" id="camName">카메라</span>
+        <div class="hd"><span class="n" id="camName">카메라</span>
           <span class="r" id="camInfo"></span></div>
         <div id="stage">
           <video id="video" playsinline muted></video>
@@ -258,28 +290,28 @@ select{background:var(--s2);border:1px solid var(--line);color:var(--fg2);border
       </div>
 
       <div class="card" id="trend">
-        <div class="hd"><span class="c">DNS</span><span class="n">밀집 추이</span>
+        <div class="hd"><span class="n">밀집 추이</span>
           <span class="r" id="trendRt"></span></div>
-        <canvas id="trendCv" height="64"></canvas>
+        <canvas id="trendCv"></canvas>
       </div>
     </div>
 
     <div id="right">
       <div class="card">
-        <div class="hd d"><span class="c">TAC</span><span class="n">전술 지도</span>
+        <div class="hd"><span class="n">전술 지도</span>
           <span class="r" id="tacRt"></span></div>
         <canvas id="tacCv" hidden></canvas>
         <div class="empty" id="tacEmpty">사람이 잡히면 바닥 좌표로 그립니다</div>
       </div>
       <div class="card" id="msn">
-        <div class="hd d"><span class="c">MSN</span><span class="n">임무</span>
+        <div class="hd"><span class="n">임무</span>
           <span class="r" id="msnRt"></span></div>
         <div id="track"></div>
         <div id="msnRows"></div>
         <div class="empty" id="msnEmpty">국부 최대가 3-경계를 넘으면 출동합니다</div>
       </div>
       <div class="card" id="log">
-        <div class="hd"><span class="c">LOG</span><span class="n">이벤트</span>
+        <div class="hd"><span class="n">이벤트</span>
           <span class="r" id="logRt"></span></div>
         <div id="logList"></div>
         <div class="empty" id="logEmpty">등급이 바뀌거나 임무가 움직이면 남습니다</div>
@@ -290,7 +322,7 @@ select{background:var(--s2);border:1px solid var(--line);color:var(--fg2);border
 
 <div id="camMode" hidden>
   <div class="h">
-    <svg viewBox="0 0 48 48" fill="none" stroke="#C8F542" stroke-width="3" aria-hidden="true">
+    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true" style="color:var(--accent)">
       <path d="M14 16a7 7 0 0 1 14 0" stroke-linecap="round"/>
       <path d="M14 16v22M28 16v4" stroke-linecap="round"/>
       <circle cx="21" cy="30" r="4" stroke-width="1.6"/><circle cx="35" cy="30" r="4" stroke-width="1.6"/>
@@ -299,6 +331,7 @@ select{background:var(--s2);border:1px solid var(--line);color:var(--fg2);border
     <b>카메라</b><span id="camCode"></span>
   </div>
   <div id="camStat">준비 중</div>
+  <div id="rotHint">폰을 가로로 돌리면 화면에 꽉 차게 나옵니다</div>
   <video id="camPrev" playsinline muted autoplay></video>
   <div id="camBack">화면 쪽 결과를 기다리는 중</div>
   <div class="btns">
@@ -308,7 +341,7 @@ select{background:var(--s2);border:1px solid var(--line);color:var(--fg2);border
   <p class="hint">화면이 꺼지면 영상도 끊깁니다. 폰을 관객 쪽으로 높이 드세요.</p>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.all.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script type="module" src="./app.js"></script>

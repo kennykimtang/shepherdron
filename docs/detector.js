@@ -11,6 +11,9 @@
  *   4. cx,cy,w,h → xyxy 로 바꾸고 레터박스를 되돌림
  *   5. IoU 0.45 NMS
  */
+/* ort.min.js 에는 WebGPU 가 들어 있지 않다. 그것만 싣고 executionProviders 에
+ * 'webgpu' 를 넣으면 조용히 WASM 으로 떨어져 단일 스레드로 돈다(초당 1~3장).
+ * index.html 에서 ort.all.min.js 를 싣는 이유다. */
 const ORT_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
 export const INPUT = 640;
 const ANCHORS = 8400;
@@ -37,17 +40,20 @@ export class Detector {
     onProgress?.("모델 내려받는 중");
     const buf = await fetchWithProgress(this.modelUrl, onProgress);
 
-    for (const ep of ["webgpu", "wasm"]) {
+    const avail = typeof navigator !== "undefined" && navigator.gpu
+      ? ["webgpu", "wasm"] : ["wasm"];
+    let last = null;
+    for (const ep of avail) {
       try {
-        onProgress?.(`${ep === "webgpu" ? "GPU" : "CPU"} 준비 중`);
+        onProgress?.(ep === "webgpu" ? "GPU 준비 중" : "CPU 준비 중");
         this.session = await ort.InferenceSession.create(buf, {
           executionProviders: [ep], graphOptimizationLevel: "all",
         });
-        this.backend = ep === "webgpu" ? "WebGPU" : "WASM";
+        this.backend = ep === "webgpu" ? "GPU" : "CPU";
         return this;
-      } catch (e) { /* 다음 백엔드로 */ }
+      } catch (e) { last = e; }
     }
-    throw new Error("추론 엔진을 초기화하지 못했습니다");
+    throw new Error(last?.message || "추론 엔진을 초기화하지 못했습니다");
   }
 
   /* 영상 한 장 → 사람 박스. conf/iou 는 파이썬 기본값과 같다. */
