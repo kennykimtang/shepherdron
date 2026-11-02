@@ -21,7 +21,7 @@ const S = {
   peaks: [], counts: [], levels: [], active: [],
   log: [], lastMsn: "IDLE", lastLv: 0,
   fps: 0, lastT: 0, srcLabel: "대기", live: false, lastActive: false,
-  det: null, link: null, mode: "idle", every: 1, tick: 0, lastPeople: [],
+  det: null, link: null, every: 1, tick: 0, lastPeople: [], pairTimer: 0,
 };
 
 /* ── 밀집도 컬러맵 (파이썬과 같은 정지점) ── */
@@ -55,6 +55,7 @@ async function listCams() {
     const sel = $("camSel");
     sel.innerHTML = "";
     if (!devs.length) { sel.innerHTML = "<option>카메라 없음</option>"; return; }
+    sel.hidden = devs.length < 2;
     devs.forEach((d, i) => {
       const o = document.createElement("option");
       o.value = d.deviceId;
@@ -81,7 +82,7 @@ async function startCam() {
 async function runCameraMode(code) {
   $("app").hidden = true;
   $("camMode").hidden = false;
-  $("camCode").textContent = `코드 ${code}`;
+  $("camCode").textContent = code;
   const stat = $("camStat"), prev = $("camPrev");
   const set = (t, cls = "") => { stat.textContent = t; stat.className = "camStat " + cls; };
   let facing = "environment", stream = null, link = null;
@@ -100,26 +101,26 @@ async function runCameraMode(code) {
       set("화면을 찾는 중");
       link = joinAsCamera(code, stream, {
         onState(st, detail) {
-          if (st === "live") set("연결됨 · 영상 보내는 중", "live");
+          if (st === "live") set("보내는 중", "live");
           else if (st === "connecting") set("화면을 찾는 중");
-          else if (st === "waiting") set("화면과 끊김 — 다시 시도 중");
+          else if (st === "waiting") set("끊겼습니다. 다시 붙는 중");
           else if (st === "error") set(detail, "err");
         },
         onReport(r) {
           if (!r || typeof r !== "object") return;
           $("camBack").textContent =
-            `인원 ${r.n}  국부최대 ${r.peak} 명/㎡  ${r.lv}  임무 ${r.msn}`;
+            `인원 ${r.n}   최대 ${r.peak} 명/㎡   ${r.lv}   ${r.msn}`;
         },
       });
       try { await navigator.wakeLock?.request("screen"); } catch (_) {}
     } catch (e) {
-      set(`카메라를 열지 못했습니다 (${e.name}). 권한을 허용하고 새로고침하세요.`, "err");
+      set(`카메라를 열지 못했습니다 (${e.name}). 권한을 허용한 뒤 새로고침하세요.`, "err");
     }
   }
   $("camFlip").onclick = () => { facing = facing === "environment" ? "user" : "environment"; open(); };
   $("camStop").onclick = () => {
     link?.stop?.(); stream?.getTracks().forEach((t) => t.stop());
-    set("중지했습니다. 새로고침하면 다시 연결합니다.");
+    set("중지했습니다. 새로고침하면 다시 붙습니다.");
   };
   open();
 }
@@ -129,6 +130,7 @@ if (camCode) runCameraMode(camCode.toUpperCase());
 else listCams();
     S.srcLabel = $("camSel").selectedOptions[0]?.textContent || "카메라";
     S.live = true;
+    $("camName").textContent = S.srcLabel;
     begin();
   } catch (e) {
     fail(`카메라를 열지 못했습니다 (${e.name}). 다른 앱이 쓰고 있는지, ` +
@@ -142,6 +144,7 @@ function openFile(f) {
   v.srcObject = null; v.src = URL.createObjectURL(f); v.loop = true;
   v.play();
   S.srcLabel = f.name; S.live = false;
+  $("camName").textContent = f.name;
   begin();
 }
 
@@ -149,36 +152,52 @@ function stopSrc() {
   if (S.stream) { S.stream.getTracks().forEach((t) => t.stop()); S.stream = null; }
 }
 
+/* 무대 위 겹침을 막는다. 한 번에 하나만 뜬다. */
+function stage(which, html) {
+  for (const id of ["start", "pair", "msg"]) $(id).hidden = id !== which;
+  if (which === "msg" && html) $("msg").innerHTML = html;
+}
+
 function fail(text) {
-  $("msg").classList.remove("hide");
-  $("msg").innerHTML = `<b>시작하지 못했습니다</b><span>${text}</span>`;
+  stage("msg", `<b>시작하지 못했습니다</b><span>${text}</span>`);
+}
+
+/* 실행 중에만 보이는 조작 */
+function showRunControls(on) {
+  for (const id of ["btnSource", "btnDispatch", "vr1", "btnHeat", "btnBox", "everySel"]) {
+    $(id).hidden = !on;
+  }
 }
 
 async function begin() {
-  $("pair").hidden = true;
   if (!S.det) {
-    const note = (t) => { $("msg").innerHTML = `<b>${t}</b><span>처음 한 번만 내려받습니다 (약 12 MB).</span>`; };
-    $("msg").classList.remove("hide"); note("인식 모델 준비 중");
+    const note = (t) => stage("msg",
+      `<b>${t}</b><span>인식 모델을 한 번만 내려받습니다. 약 12 MB.</span>`);
+    note("준비 중");
     try { S.det = await new Detector().load(note); }
     catch (e) { return fail(`인식 모델을 준비하지 못했습니다. ${e.message}`); }
-    addLog(`검출기 준비 · YOLOv8n ${S.det.backend}`, "SYS", "#22272C", "#9AA2AB");
+    addLog(`YOLOv8n ${S.det.backend}`, "준비");
   }
-  $("msg").classList.add("hide");
-  if (!S.running) { S.running = true; addLog("세션 시작", "SYS", "#22272C", "#9AA2AB"); loop(); }
+  stage(null);
+  showRunControls(true);
+  $("tacEmpty").hidden = true; $("tacCv").hidden = false;
+  $("msnEmpty").hidden = true;
+  if (!S.running) { S.running = true; loop(); }
 }
 
 /* ── 로그 ── */
-function addLog(text, tag, bg, fg = "#0B0D10") {
+function addLog(text, tag, bg = "#2A3036", fg = "#C5CBD1") {
   const d = new Date();
   const t = [d.getHours(), d.getMinutes(), d.getSeconds()]
     .map((n) => String(n).padStart(2, "0")).join(":");
   S.log.unshift({ t, text, tag, bg, fg });
   if (S.log.length > 40) S.log.pop();
   $("logRt").textContent = S.log.length;
+  $("logEmpty").hidden = true;
   $("logList").innerHTML = S.log.map((e) =>
     `<div class="e"><time>${e.t}</time>` +
-    `<span class="tag" style="background:${e.bg};color:${e.fg}">${e.tag}</span>` +
-    `<span class="tx">${esc(e.text)}</span></div>`).join("");
+    `<span class="t" style="background:${e.bg};color:${e.fg}">${esc(e.tag)}</span>` +
+    `<span class="x">${esc(e.text)}</span></div>`).join("");
 }
 
 /* ── 메인 루프 ── */
@@ -217,12 +236,12 @@ async function loop() {
 
     if (roi.level !== S.lastLv) {
       const L = V.levelInfo(roi.level);
-      addLog(`등급 ${roi.level > S.lastLv ? "상승" : "하강"} · 국부 최대 ${roi.peakDensity.toFixed(1)} 명/㎡`,
-             V.levelTag(roi.level), L.color);
+      addLog(`국부 최대 ${roi.peakDensity.toFixed(1)} 명/㎡`,
+             V.levelTag(roi.level), L.color, "#101214");
       S.lastLv = roi.level;
     }
     if (S.mission.state !== S.lastMsn) {
-      addLog(S.mission.reason, V.MISSION[S.mission.state], LIME);
+      addLog(S.mission.reason, V.MISSION[S.mission.state], LIME, "#101214");
       S.lastMsn = S.mission.state;
     }
 
@@ -472,8 +491,6 @@ function writePanels(roi, pic) {
   $("msnRows").innerHTML = rows.map(([k, v, mono, hi]) =>
     `<div class="r"><b>${k}</b><span class="${mono ? "mono " : ""}${hi ? "hi" : ""}">${esc(v)}</span></div>`).join("");
 
-  $("srcPill").innerHTML = `<i></i>${S.live ? "LIVE" : "재생"} · ${esc(S.srcLabel)}`;
-  $("srcPill").style.color = S.live ? "#FF5A4F" : "#959CA5";
 }
 
 /* ── 조작 ── */
@@ -485,28 +502,42 @@ setInterval(() => {
 
 function startPhoneLink() {
   stopSrc(); S.link?.stop?.();
-  $("msg").classList.add("hide");
-  $("pair").hidden = false;
-  $("pairState").textContent = "코드를 만드는 중…";
+  stage("pair");
+  $("pairState").className = "";
+  $("pairState").textContent = "코드 만드는 중";
+  // 신호 서버가 조용하면 사용자가 영문을 알 수 있어야 한다
+  clearTimeout(S.pairTimer);
+  S.pairTimer = setTimeout(() => {
+    if ($("code").textContent.includes("·")) {
+      $("pairState").className = "err";
+      $("pairState").textContent =
+        "신호 서버에 닿지 못했습니다. 인터넷을 확인하고 다시 눌러 주세요.";
+    }
+  }, 12000);
   S.link = hostDisplay({
     onCode(code) {
       const url = cameraUrl(code);
       $("code").textContent = code;
       $("camUrl").textContent = url;
+      $("qr").innerHTML = "";
       drawQr($("qr"), url);
-      $("pairState").textContent = "폰이 붙기를 기다리는 중";
+      $("pairState").textContent = "폰을 기다리는 중";
+      clearTimeout(S.pairTimer);
     },
     onState(st, detail) {
-      if (st === "waiting") $("pairState").textContent = "폰이 붙기를 기다리는 중";
-      else if (st === "live") $("pairState").textContent = "연결됨";
-      else if (st === "error") { $("pairState").textContent = detail; $("pairState").style.color = "#FF5A4F"; }
+      const el = $("pairState");
+      el.className = st === "error" ? "err" : "";
+      if (st === "waiting") el.textContent = "폰을 기다리는 중";
+      else if (st === "live") el.textContent = "연결됨";
+      else if (st === "error") el.textContent = detail;
     },
     async onStream(stream) {
       const v = $("video");
       v.srcObject = stream; v.src = ""; v.loop = false;
       await v.play().catch(() => {});
       S.srcLabel = "폰 카메라"; S.live = true;
-      addLog("폰 카메라 연결됨", "연결", "#C8F542");
+      $("camName").textContent = "폰 카메라";
+      addLog("폰 카메라가 붙었습니다", "연결", "#C8F542", "#101214");
       begin();
     },
   });
@@ -514,6 +545,16 @@ function startPhoneLink() {
 
 $("btnPhone").onclick = startPhoneLink;
 $("btnStart").onclick = startCam;
+$("btnSource").onclick = () => {
+  stopSrc(); S.link?.stop?.(); S.link = null;
+  $("video").srcObject = null; $("video").src = "";
+  S.running = false; S.lastPeople = [];
+  showRunControls(false);
+  $("tacEmpty").hidden = false; $("tacCv").hidden = true;
+  $("msnEmpty").hidden = false;
+  $("camName").textContent = "카메라"; $("camInfo").textContent = "";
+  stage("start");
+};
 $("btnCopyUrl").onclick = async () => {
   const t = $("camUrl").textContent;
   try { await navigator.clipboard.writeText(t); $("btnCopyUrl").textContent = "복사됨"; }
@@ -522,7 +563,7 @@ $("btnCopyUrl").onclick = async () => {
 };
 $("btnFile").onclick = () => $("file").click();
 $("file").onchange = (e) => e.target.files[0] && openFile(e.target.files[0]);
-$("btnDispatch").onclick = () => { S.mission.dispatch(); addLog("운용자 수동 출동", "수동", LIME); };
+$("btnDispatch").onclick = () => { S.mission.dispatch(); addLog("수동 출동", "임무", LIME, "#101214"); };
 const toggle = (id, key) => {
   $(id).onclick = () => { S[key] = !S[key]; $(id).setAttribute("aria-pressed", String(S[key])); };
 };
@@ -531,7 +572,7 @@ $("everySel").onchange = (e) => { S.every = Math.max(1, +e.target.value || 1); }
 $("btnFull").onclick = () => (document.fullscreenElement
   ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}));
 $("camSel").onchange = () => { if (S.stream) startCam(); };
-$("btnStart").addEventListener("click", () => ($("camSel").hidden = false));
+
 addEventListener("keydown", (e) => {
   if (e.target.tagName === "SELECT") return;
   const k = e.key.toLowerCase();
@@ -544,7 +585,7 @@ addEventListener("keydown", (e) => {
 async function runCameraMode(code) {
   $("app").hidden = true;
   $("camMode").hidden = false;
-  $("camCode").textContent = `코드 ${code}`;
+  $("camCode").textContent = code;
   const stat = $("camStat"), prev = $("camPrev");
   const set = (t, cls = "") => { stat.textContent = t; stat.className = "camStat " + cls; };
   let facing = "environment", stream = null, link = null;
@@ -563,26 +604,26 @@ async function runCameraMode(code) {
       set("화면을 찾는 중");
       link = joinAsCamera(code, stream, {
         onState(st, detail) {
-          if (st === "live") set("연결됨 · 영상 보내는 중", "live");
+          if (st === "live") set("보내는 중", "live");
           else if (st === "connecting") set("화면을 찾는 중");
-          else if (st === "waiting") set("화면과 끊김 — 다시 시도 중");
+          else if (st === "waiting") set("끊겼습니다. 다시 붙는 중");
           else if (st === "error") set(detail, "err");
         },
         onReport(r) {
           if (!r || typeof r !== "object") return;
           $("camBack").textContent =
-            `인원 ${r.n}  국부최대 ${r.peak} 명/㎡  ${r.lv}  임무 ${r.msn}`;
+            `인원 ${r.n}   최대 ${r.peak} 명/㎡   ${r.lv}   ${r.msn}`;
         },
       });
       try { await navigator.wakeLock?.request("screen"); } catch (_) {}
     } catch (e) {
-      set(`카메라를 열지 못했습니다 (${e.name}). 권한을 허용하고 새로고침하세요.`, "err");
+      set(`카메라를 열지 못했습니다 (${e.name}). 권한을 허용한 뒤 새로고침하세요.`, "err");
     }
   }
   $("camFlip").onclick = () => { facing = facing === "environment" ? "user" : "environment"; open(); };
   $("camStop").onclick = () => {
     link?.stop?.(); stream?.getTracks().forEach((t) => t.stop());
-    set("중지했습니다. 새로고침하면 다시 연결합니다.");
+    set("중지했습니다. 새로고침하면 다시 붙습니다.");
   };
   open();
 }
