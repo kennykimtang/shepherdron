@@ -21,11 +21,20 @@ const ICE = [
 export const makeCode = (n = 6) =>
   Array.from({ length: n }, () => ALPHABET[(Math.random() * ALPHABET.length) | 0]).join("");
 
+/* QR 모듈 수는 글자 수가 정한다. '?cam=' 대신 '#' 를 쓰면 네 글자가 줄어
+ * QR 버전이 4에서 3으로 내려가고(33x33 → 29x29) 모듈이 그만큼 굵어진다. */
 export const cameraUrl = (code) => {
   const u = new URL(location.href);
-  u.search = ""; u.hash = "";
-  u.searchParams.set("cam", code);
+  u.search = ""; u.hash = code;
   return u.toString();
+};
+
+/* 구버전 주소(?cam=)도 계속 받는다 */
+export const readCode = () => {
+  const h = location.hash.replace(/^#/, "").trim();
+  if (/^[A-Za-z0-9]{4,12}$/.test(h)) return h.toUpperCase();
+  const q = new URLSearchParams(location.search).get("cam");
+  return q ? q.trim().toUpperCase() : null;
 };
 
 function newPeer(id) {
@@ -100,18 +109,21 @@ export function joinAsCamera(code, stream, { onState, onReport }) {
 }
 
 /* ── QR ── */
-export function drawQr(el, text, cell = 5) {
+export function drawQr(el, text) {
+  // 여백 4모듈은 규격이 요구하는 정숙 구역이다. 좁히면 인식률이 떨어진다.
   const qr = self.qrcode(0, "M");
   qr.addData(text);
   qr.make();
-  el.innerHTML = qr.createSvgTag({ cellSize: cell, margin: 2, scalable: true });
+  el.innerHTML = qr.createSvgTag({ cellSize: 8, margin: 4, scalable: true });
   const svg = el.querySelector("svg");
-  if (svg) {
-    svg.removeAttribute("width"); svg.removeAttribute("height");
-    svg.style.width = "100%"; svg.style.height = "auto";
-    svg.querySelectorAll("rect").forEach((r) => {
-      if (r.getAttribute("fill") === "#ffffff") r.setAttribute("fill", "#ffffff");
-      else r.setAttribute("fill", "#0A0B0D");
-    });
-  }
+  if (!svg) return;
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
+  svg.style.width = "100%";
+  svg.style.height = "100%";
+  // 안티앨리어싱이 끼면 작은 모듈의 경계가 흐려져 못 읽는다
+  // 색을 건드리지 않는다. 라이브러리가 흰 배경 + 검은 모듈로 이미 올바르게
+  // 내보낸다. 전에는 fill 값을 '#ffffff' 로 비교했는데 실제 값은 'white' 라
+  // 배경까지 검게 칠해져 QR 이 거의 보이지 않았다.
+  svg.setAttribute("shape-rendering", "crispEdges");
 }

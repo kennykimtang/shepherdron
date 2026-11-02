@@ -75,11 +75,14 @@ select{background:var(--s2);border:1px solid var(--line);color:var(--fg2);border
 .pick span{font-size:12.5px;color:var(--fg3);min-width:0}
 
 /* 페어링 */
-#pair .box{display:flex;gap:20px;align-items:flex-start;max-width:600px;flex-wrap:wrap}
-#qr{width:168px;flex:0 0 168px;background:#fff;padding:8px;border-radius:3px;
-    display:flex;align-items:center;justify-content:center;aspect-ratio:1}
+#pair .box{display:flex;gap:26px;align-items:center;max-width:720px;flex-wrap:wrap;
+  justify-content:center}
+#qr{width:min(304px,40vmin);flex:0 0 auto;aspect-ratio:1;background:#fff;
+    border-radius:3px;display:flex;align-items:center;justify-content:center;
+    image-rendering:pixelated}
 #qr .ph{font-size:12px;color:#5E656C}
-#pair .tx{flex:1 1 260px;min-width:240px}
+#qr svg{display:block}
+#pair .tx{flex:1 1 280px;min-width:260px;max-width:360px}
 #pair h2{margin:0 0 5px;font-size:15px;font-weight:600}
 #pair p{margin:0 0 12px;font-size:13px;color:var(--fg2)}
 #pair p.d{color:var(--fg3);font-size:12.5px;margin-bottom:6px}

@@ -3,7 +3,7 @@
  */
 import * as V from "./vision.js";
 import { Detector } from "./detector.js";
-import { hostDisplay, joinAsCamera, cameraUrl, drawQr } from "./link.js";
+import { hostDisplay, joinAsCamera, cameraUrl, drawQr, readCode } from "./link.js";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
@@ -125,8 +125,8 @@ async function runCameraMode(code) {
   open();
 }
 
-const camCode = new URLSearchParams(location.search).get("cam");
-if (camCode) runCameraMode(camCode.toUpperCase());
+const camCode = readCode();
+if (camCode) runCameraMode(camCode);
 else listCams();
     S.srcLabel = $("camSel").selectedOptions[0]?.textContent || "카메라";
     S.live = true;
@@ -628,6 +628,6 @@ async function runCameraMode(code) {
   open();
 }
 
-const camCode = new URLSearchParams(location.search).get("cam");
-if (camCode) runCameraMode(camCode.toUpperCase());
+const camCode = readCode();
+if (camCode) runCameraMode(camCode);
 else listCams();
