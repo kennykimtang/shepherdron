@@ -12,6 +12,8 @@ env/
 # 모델 가중치 — 레포에 넣지 않는다 (최초 실행 시 자동 다운로드)
 *.pt
 *.onnx
+# 웹 시연판은 모델을 함께 배포해야 한다 (GitHub Pages 가 서빙한다)
+!docs/*.onnx
 *_ncnn_model/
 *_openvino_model/
 
