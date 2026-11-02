@@ -22,6 +22,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import os
 import sys
 import time
 from datetime import datetime
@@ -84,6 +86,8 @@ def parse_args():
                    help="카메라 수평 화각(도). 노트북 웹캠 약 70, Camera Module 3 Wide 102")
     p.add_argument("--no-sim", action="store_true",
                    help="가상 기체를 끄고 인식 화면만 쓴다")
+    p.add_argument("--check", action="store_true",
+                   help="리허설 점검 : 카메라 목록 · 한글 폰트 · 처리 속도")
     return p.parse_args()
 
 
@@ -145,6 +149,22 @@ def step(args, pipe, renderer, field, mission, frame, now=None, **view):
     return res, renderer.render(frame, res, tactical=pic, mission=mission, **view)
 
 
+@contextlib.contextmanager
+def _quiet_stderr():
+    """OpenCV 가 장치·코덱을 더듬을 때 뱉는 경고를 가린다."""
+    fd = sys.stderr.fileno()
+    saved = os.dup(fd)
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    try:
+        sys.stderr.flush()
+        os.dup2(devnull, fd)
+        yield
+    finally:
+        os.dup2(saved, fd)
+        os.close(devnull)
+        os.close(saved)
+
+
 def save_shot(canvas, folder: str) -> str:
     Path(folder).mkdir(parents=True, exist_ok=True)
     path = str(Path(folder) / f"shot_{datetime.now():%H%M%S}.png")
@@ -154,19 +174,37 @@ def save_shot(canvas, folder: str) -> str:
 
 
 # ─────────────────────── 녹화 모드 ───────────────────────
+def open_writer(path: str, fps: float, size):
+    """PowerPoint 가 재생할 수 있는 mp4 를 연다.
+
+    OpenCV 기본값인 'mp4v' 는 MPEG-4 Part 2(FMP4) 로 쓰는데, 윈도우
+    PowerPoint 는 이걸 못 여는 경우가 많다. 발표용 파일을 다른 PC 로
+    들고 가야 하므로 H.264(avc1) 를 먼저 시도한다.
+    """
+    for tag in ("avc1", "H264", "mp4v"):
+        with _quiet_stderr():
+            w = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*tag), fps, size)
+        if w.isOpened():
+            if tag == "mp4v":
+                print("[demo] 주의 : H.264 인코더가 없어 FMP4 로 저장합니다.")
+                print("       윈도우 PowerPoint 에서 재생이 안 되면 "
+                      "변환 후 삽입하세요 (예: HandBrake, 무료).")
+            return w, tag
+        w.release()
+    return None, None
 def run_record(args) -> int:
     pipe, renderer, field, label, mission = build(args)
     from vision.stream_handler import StreamHandler
     src = StreamHandler(source=args.source, loop_files=False).start()
 
-    writer = cv2.VideoWriter(args.record, cv2.VideoWriter_fourcc(*"mp4v"),
-                             args.fps, (args.width, args.height))
-    if not writer.isOpened():
+    writer, codec = open_writer(args.record, args.fps, (args.width, args.height))
+    if writer is None:
         print(f"[demo] mp4 를 열 수 없습니다: {args.record}", file=sys.stderr)
         return 2
 
     n, t0 = 0, time.monotonic()
-    print(f"[demo] 녹화 시작 → {args.record}")
+    print(f"[demo] 녹화 시작 → {args.record}  ({args.width}x{args.height}, "
+          f"{codec}, {args.fps:g}fps)")
     try:
         while True:
             ok, frame = src.read()
@@ -192,8 +230,11 @@ def run_record(args) -> int:
     finally:
         writer.release()
         src.stop()
-    print(f"[demo] 완료 — {n} 프레임, {n / args.fps:.1f} 초 → {args.record}")
-    print("[demo] 이 파일을 PowerPoint 슬라이드에 끌어다 놓으세요.")
+    mb = Path(args.record).stat().st_size / 1e6 if Path(args.record).exists() else 0
+    print(f"[demo] 완료 — {n} 프레임, {n / args.fps:.1f} 초, {mb:.1f} MB "
+          f"→ {args.record}")
+    print("[demo] PowerPoint : 삽입 > 비디오 > '이 디바이스'로 넣으세요.")
+    print("       (파일 '연결'이 아니라 '삽입'이어야 다른 PC 에서도 재생됩니다)")
     return 0
 
 
@@ -262,8 +303,113 @@ def run_live(args) -> int:
     return 0
 
 
+# ─────────────────────── 리허설 점검 ───────────────────────
+def probe_cameras(limit: int = 6, warmup: int = 12):
+    """열리는 카메라 번호와 해상도를 찾는다. 폰 웹캠 앱이 몇 번인지 알아내는 용도.
+
+    카메라는 열린 직후 첫 몇 프레임을 돌려주지 않는 일이 흔하다. 한 번 읽고
+    없다고 단정하면 멀쩡한 장치를 놓친다. 그래서 잠깐 기다리며 다시 읽는다.
+    """
+    found, misses = [], 0
+    for i in range(limit):
+        with _quiet_stderr():
+            cap = cv2.VideoCapture(i)
+            try:
+                hit = None
+                if cap.isOpened():
+                    for _ in range(warmup):
+                        ok, frame = cap.read()
+                        if ok and frame is not None:
+                            hit = (i, frame.shape[1], frame.shape[0])
+                            break
+                        time.sleep(0.05)
+            finally:
+                cap.release()
+        if hit:
+            found.append(hit)
+            misses = 0
+        else:
+            misses += 1
+            if misses >= 2 and found:      # 번호가 끊기면 더 볼 필요가 없다
+                break
+    return found
+
+
+def run_check(args) -> int:
+    print("Shepherdron 시연 점검\n" + "=" * 46)
+
+    print("\n[1] 카메라")
+    print("  찾는 중...")
+    cams = probe_cameras()
+    if not cams:
+        print("  없음. 폰 웹캠 앱을 켰는지, 다른 프로그램이 카메라를 "
+              "쓰고 있지 않은지 확인하세요.")
+    for i, w, h in cams:
+        role = "내장 웹캠(발표자 쪽일 가능성 높음)" if i == 0 else "외부 — 관객용으로 쓰세요"
+        print(f"  --source {i}   {w}x{h}   {role}")
+
+    print("\n[2] 한글 폰트")
+    from vision.text_painter import TextPainter
+    t = TextPainter()
+    if t.has_korean:
+        print(f"  정상 — {t._paths['regular']}")
+    else:
+        print("  없음. 한글이 네모로 나옵니다.")
+        print("  SHEPHERDRON_FONT=/경로/폰트.ttf 로 지정하세요.")
+    print(f"  고정폭 — {t._paths.get('mono') or '없음(숫자가 흔들립니다)'}")
+
+    print("\n[3] 예비 클립")
+    if args.fallback:
+        ok = Path(args.fallback).exists()
+        print(f"  {args.fallback} — {'있음' if ok else '없음! 경로를 확인하세요'}")
+    else:
+        print("  지정 안 됨. --fallback 으로 예비 클립을 꼭 준비하세요.")
+
+    print("\n[4] 처리 속도")
+    src_name = args.source
+    if not cams and str(src_name).isdigit():
+        print("  카메라가 없어 건너뜁니다.")
+        return 0
+    pipe, renderer, field, label, mission = build(args)
+    from vision.stream_handler import StreamHandler
+    src = StreamHandler(source=src_name, loop_files=True).start()
+
+    # 첫 몇 프레임은 모델 워밍업이라 느리다. 측정에서 뺀다.
+    warm, deadline = 0, time.monotonic() + 25
+    while warm < 5 and time.monotonic() < deadline:
+        ok, frame = src.read()
+        if not ok:
+            time.sleep(0.02)
+            continue
+        step(args, pipe, renderer, field, mission, frame)
+        warm += 1
+
+    t0, n = time.monotonic(), 0
+    while n < 20 and time.monotonic() - t0 < 20:
+        ok, frame = src.read()
+        if not ok:
+            time.sleep(0.02)
+            continue
+        step(args, pipe, renderer, field, mission, frame)
+        n += 1
+    el = time.monotonic() - t0
+    src.stop()
+    if n:
+        fps = n / el
+        verdict = ("충분" if fps >= 10 else
+                   "조금 느림 — --imgsz 320 권장" if fps >= 6 else
+                   "느림 — --imgsz 320 으로 낮추세요")
+        print(f"  --source {src_name} : {fps:.1f} FPS — {verdict}")
+    else:
+        print(f"  {src_name} 에서 프레임을 받지 못했습니다.")
+    print("\n전체 절차는 DEMO.md 를 보세요.")
+    return 0
+
+
 def main() -> int:
     args = parse_args()
+    if args.check:
+        return run_check(args)
     return run_record(args) if args.record else run_live(args)
 
 

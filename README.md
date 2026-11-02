@@ -81,7 +81,7 @@ iMax B6 충전기 · RadioMaster Pocket · Raspberry Pi 4
 | [VISION.md](VISION.md) | 비전 코어 : 파이프라인·캘리브레이션·Pi 배포 |
 | [FLIGHT.md](FLIGHT.md) | 비행 제어 : 측지 변환·안전 가드·SITL |
 | [PAYLOAD.md](PAYLOAD.md) | 페이로드 : 전개/수축, 기구 방식 선택지 |
-| [DEMO.md](DEMO.md) | 시연 운용 : 발표용 관제 화면·PPT 삽입·단축키·한계 |
+| [DEMO.md](DEMO.md) | 시연 운용 : 발표용 관제 화면·PPT 삽입·단축키·한계 ([웹](https://claude.ai/artifact/3qpzqoAn29gS72UyLJPfAE)) |
 | [OPERATIONS.md](OPERATIONS.md) | 현장 운용 : 비행 절차·ArduPilot 설정·문제 해결 |
 | [INDOOR.md](INDOOR.md) | 실내 시연 : GPS 없는 비행·고도 제약·안전 구성 |
 | [BOM.md](BOM.md) | 부품 명세 : 구매 링크·호환성 점검·미구매 항목 |
