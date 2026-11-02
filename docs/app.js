@@ -100,84 +100,7 @@ async function startCam() {
     const v = $("video");
     v.srcObject = S.stream; v.loop = false;
     await v.play();
-    await /* ── 폰 : ?cam=CODE 로 열리면 카메라 모드 ── */
-async function runCameraMode(code) {
-  $("app").hidden = true;
-  $("camMode").hidden = false;
-  $("camCode").textContent = code;
-  const stat = $("camStat"), prev = $("camPrev");
-  const set = (t, cls = "") => { stat.textContent = t; stat.className = "camStat " + cls; };
-  let facing = "environment", stream = null, link = null, beat = 0;
-
-  async function open() {
-    try {
-      stream?.getTracks().forEach((t) => t.stop());
-      set("카메라 여는 중");
-      // 가로 16:9 로 달라고 한다. 폰을 가로로 들면 PC 화면을 꽉 채운다.
-      // aspectRatio 를 걸면 폰이 센서 방향 기준으로 해석해 세로 16:9(540x960)
-      // 같은 결과가 나온다. 크기만 요청하고 방향은 받는 쪽에서 세운다.
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: facing },
-          width: { ideal: 1280 }, height: { ideal: 720 },
-          frameRate: { ideal: 24 },
-        },
-        audio: false,
-      });
-      prev.srcObject = stream;
-      await prev.play().catch(() => {});
-      watchOrientation(prev, stream);
-      link?.stop?.();
-      set("화면을 찾는 중");
-      link = joinAsCamera(code, stream, {
-        onState(st, detail) {
-          if (st === "live") set("보내는 중", "live");
-          else if (st === "connecting") set("화면을 찾는 중");
-          else if (st === "waiting") set("끊겼습니다. 다시 붙는 중");
-          else if (st === "error") set(detail, "err");
-        },
-        onReport(r) {
-          if (!r || typeof r !== "object") return;
-          $("camBack").textContent =
-            `인원 ${r.n}   최대 ${r.peak} 명/㎡   ${r.lv}   ${r.msn}`;
-        },
-      });
-      try { await navigator.wakeLock?.request("screen"); } catch (_) {}
-    } catch (e) {
-      set(`카메라를 열지 못했습니다 (${e.name}). 권한을 허용한 뒤 새로고침하세요.`, "err");
-    }
-  }
-  /* 세로로 들고 있으면 PC 쪽에 세로 영상이 가서 양옆이 비어 보인다. */
-  function watchOrientation(video, stream) {
-    const check = () => {
-      const w = video.videoWidth, h = video.videoHeight;
-      if (!w || !h) return;
-      // 센서 방향은 WebRTC 로 넘어가지 않는다. 각도를 직접 보내 화면 쪽에서 세운다.
-      const ang = (screen.orientation?.angle ?? window.orientation ?? 0) | 0;
-      $("rotHint").classList.toggle("on", h > w && ang % 180 === 0);
-      link?.send?.({ rot: ang, w, h });
-    };
-    video.addEventListener("loadedmetadata", check);
-    video.addEventListener("resize", check);
-    screen.orientation?.addEventListener?.("change", () => setTimeout(check, 350));
-    addEventListener("orientationchange", () => setTimeout(check, 350));
-    clearInterval(beat);
-    beat = setInterval(check, 2000);  // 연결이 늦게 붙어도 전달되게
-    check();
-  }
-
-  $("camFlip").onclick = () => { facing = facing === "environment" ? "user" : "environment"; open(); };
-  $("camStop").onclick = () => {
-    clearInterval(beat);
-    link?.stop?.(); stream?.getTracks().forEach((t) => t.stop());
-    set("중지했습니다. 새로고침하면 다시 붙습니다.");
-  };
-  open();
-}
-
-const camCode = readCode();
-if (camCode) runCameraMode(camCode);
-else listCams();
+    await listCams();
     S.srcLabel = $("camSel").selectedOptions[0]?.textContent || "카메라";
     S.live = true;
     $("camName").textContent = S.srcLabel;
@@ -215,7 +138,7 @@ function fail(text) {
 /* 실행 중에만 보이는 조작 */
 function showRunControls(on) {
   for (const id of ["btnSource", "btnDispatch", "vr1", "btnHeat", "btnBox",
-                    "btnRot", "everySel"]) {
+                    "btnRot", "btnCamFull", "everySel"]) {
     $(id).hidden = !on;
   }
 }
@@ -695,8 +618,11 @@ const toggle = (id, key) => {
 };
 toggle("btnHeat", "heat"); toggle("btnBox", "boxes");
 $("everySel").onchange = (e) => { S.every = Math.max(1, +e.target.value || 1); };
-$("btnFull").onclick = () => (document.fullscreenElement
-  ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}));
+const goFull = (el) => (document.fullscreenElement
+  ? document.exitFullscreen() : el.requestFullscreen?.().catch(() => {}));
+$("btnFull").onclick = () => goFull(document.documentElement);
+// 카메라 영역만 키운다. 발표 중 영상만 크게 보여 줄 때 쓴다.
+$("btnCamFull").onclick = () => goFull($("stage"));
 $("camSel").onchange = () => { if (S.stream) startCam(); };
 
 addEventListener("keydown", (e) => {
@@ -707,6 +633,7 @@ addEventListener("keydown", (e) => {
   else if (k === "b") $("btnBox").click();
   else if (k === "f") $("btnFull").click();
   else if (k === "r" && !$("btnRot").hidden) $("btnRot").click();
+  else if (k === "c" && !$("btnCamFull").hidden) $("btnCamFull").click();
 });
 /* ── 폰 : ?cam=CODE 로 열리면 카메라 모드 ── */
 async function runCameraMode(code) {
