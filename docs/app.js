@@ -30,7 +30,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", readToke
 
 const S = {
   running: false, stream: null, model: null,
-  heat: true, boxes: true, roi: null, areaM2: null, tiles: 2,
+  heat: true, boxes: true, roi: null, areaM2: null, tiles: 1,
   hfov: 70, sigma: 0.75, tiers: V.DEFAULT_TIERS,
   level: new V.LevelFilter(8),
   alert: new V.AlertDebouncer(15, 0.6, 0.25, 4),
@@ -140,7 +140,7 @@ function fail(text) {
 /* 실행 중에만 보이는 조작 */
 function showRunControls(on) {
   for (const id of ["btnSource", "btnDispatch", "vr1", "btnHeat", "btnBox",
-                    "btnRot", "btnCamFull", "tileSel", "everySel"]) {
+                    "btnRot", "btnCamFull", "areaIn", "tileSel", "everySel"]) {
     $(id).hidden = !on;
   }
 }
@@ -226,10 +226,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* 검출 결과 한 벌에 대한 판단. 화면 그리기와 분리돼 있다. */
 function analyse(W, H, now) {
   const people = S.lastPeople;
-  const field = V.densityField(people, S.sigma);
+  // 촬영 구역의 실제 면적을 넣어 두면 픽셀당 미터를 바로 역산한다. 머리 박스
+  // 크기로 추정하는 것보다 정확해서, 값이 있으면 그쪽을 쓴다.
+  const mPerPx = S.areaM2 ? Math.sqrt(S.areaM2 / V.polygonAreaPx(S.roi, W, H)) : null;
+  const field = V.densityField(people, S.sigma, mPerPx);
   const roi = V.analyzeRoi(field, S.roi, W, H, { tiers: S.tiers, areaM2: S.areaM2 });
   roi.level = S.level.update(roi.level);
-  const pic = V.buildPicture(people, W, S.sigma, S.hfov);
+  const pic = V.buildPicture(people, W, S.sigma, S.hfov, mPerPx);
 
   const active = S.alert.update(roi.level >= 3, now);
   S.mission.update(active && !S.lastActive, active, roi.count, pic.hotspot, now);
@@ -250,6 +253,7 @@ function analyse(W, H, now) {
   }
   S.link?.report?.({ n: roi.count, peak: +roi.peakDensity.toFixed(2),
                      lv: V.levelTag(roi.level), msn: V.MISSION[S.mission.state] });
+  S.mPerPx = mPerPx;
   S.view = { roi, pic, field, people };
 }
 
@@ -304,7 +308,7 @@ function drawView(v, W, H, people, roi) {
 
   if (S.heat && people.length) {
     const ref = S.tiers[S.tiers.length - 1];
-    const { heat, fw, fh } = V.densityRaster(people, S.sigma, W, H, 160);
+    const { heat, fw, fh } = V.densityRaster(people, S.sigma, W, H, 160, S.mPerPx);
     if (heatCv.width !== fw || heatCv.height !== fh) { heatCv.width = fw; heatCv.height = fh; }
     const hx = heatCv.getContext("2d"), img = hx.createImageData(fw, fh);
     for (let i = 0; i < heat.length; i++) {
@@ -657,6 +661,12 @@ const toggle = (id, key) => {
 };
 toggle("btnHeat", "heat"); toggle("btnBox", "boxes");
 $("everySel").onchange = (e) => { S.every = Math.max(1, +e.target.value || 1); };
+$("areaIn").onchange = (e) => {
+  const v = parseFloat(e.target.value);
+  S.areaM2 = Number.isFinite(v) && v > 0 ? v : null;
+  addLog(S.areaM2 ? `촬영 구역 ${S.areaM2} ㎡ 기준으로 밀도를 냅니다`
+                  : "면적을 머리 크기로 추정합니다");
+};
 $("tileSel").onchange = (e) => {
   S.tiles = Math.max(1, +e.target.value || 1);
   addLog(S.tiles > 1 ? `화면을 ${S.tiles}×${S.tiles} 로 나눠 봅니다` : "화면 전체를 한 번에 봅니다");

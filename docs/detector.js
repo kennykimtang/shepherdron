@@ -1,14 +1,20 @@
-/* 브라우저 YOLOv8n 사람 검출 — onnxruntime-web.
+/* 브라우저 머리 검출 — onnxruntime-web.
  *
- * 노트북 파이썬판과 같은 가중치(yolov8n)를 ONNX 로 내보내 쓴다. coco-ssd 는
- * 군중에서 겹친 사람을 많이 놓쳐서 바꿨다.
+ * 쓰는 가중치는 CrowdHuman 으로 학습한 person+head 2클래스 YOLOv11s 다
+ * (huggingface.co/Sharath33/Person, openrail++). 그중 head 클래스만 쓴다.
  *
- * 전처리·후처리는 파이썬 onnxruntime 으로 ultralytics 결과와 대조해 맞췄다
- * (bus.jpg 4명, IoU 0.90~0.98, 좌표 오차 1.6~12 px).
+ * COCO 로 학습한 yolov8n 의 person 은 전신 박스를 기대하고 배운 탓에, 몸통이
+ * 앞사람에 가린 군중에서는 거의 못 잡는다. 마라톤 출발선 사진(2589x1458,
+ * 300명 이상)으로 재 보니 앞줄 4명이 전부였다. 군중에서 끝까지 보이는 건
+ * 머리뿐이라 머리로 바꿨다. 같은 사진 같은 조건에서 136명이 나온다.
+ * 드론은 내려다보므로 머리 위치가 곧 그 사람의 지상 위치이기도 하다.
+ *
  *   1. 640x640 레터박스, 여백은 114, 가운데 정렬
  *   2. RGB · CHW · /255
- *   3. 출력 [1,84,8400] 에서 4번 행이 person 점수
- *   4. cx,cy,w,h → xyxy 로 바꾸고 레터박스를 되돌림
+ *   3. 출력은 boxes[1,8400,4](cx,cy,w,h) · scores[1,8400,1] · classes[1,8400,1]
+ *      — yolov8n 의 [1,84,8400] 과 달리 클래스 argmax 까지 그래프 안에서 끝난다.
+ *      classes 1 이 head 다.
+ *   4. 레터박스를 되돌려 원본 좌표로
  *   5. IoU NMS
  *
  * 타일 추론(tiles>1)
@@ -25,15 +31,15 @@
  * index.html 에서 ort.all.min.js 를 싣는 이유다. */
 const ORT_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
 export const INPUT = 640;
+export const HEAD_CLASS = 1;
 const OVERLAP = 0.2;            // 조각이 중심 구역 밖으로 더 보는 비율
-const ANCHORS = 8400;
-const PERSON_ROW = 4;
 
 export class Detector {
-  constructor(modelUrl = "./yolov8n.onnx") {
+  constructor(modelUrl = "./head.onnx") {
     this.modelUrl = modelUrl;
     this.session = null;
     this.backend = "—";
+    this.out = null;
     this.cv = document.createElement("canvas");
     this.cv.width = INPUT; this.cv.height = INPUT;
     this.ctx = this.cv.getContext("2d", { willReadFrequently: true });
@@ -60,6 +66,15 @@ export class Detector {
           executionProviders: [ep], graphOptimizationLevel: "all",
         });
         this.backend = ep === "webgpu" ? "GPU" : "CPU";
+        // 출력 이름으로 찾는다. 순서에 기대면 다른 내보내기에서 조용히 어긋난다.
+        const names = this.session.outputNames;
+        this.out = {
+          boxes: names.find((s) => /box/i.test(s)),
+          scores: names.find((s) => /score|conf/i.test(s)),
+          classes: names.find((s) => /class|label/i.test(s)),
+        };
+        if (!this.out.boxes || !this.out.scores || !this.out.classes)
+          throw new Error(`모델 출력이 예상과 다릅니다 (${names.join(", ")})`);
         return this;
       } catch (e) { last = e; }
     }
@@ -70,7 +85,7 @@ export class Detector {
    * 방향을 바로잡은 캔버스를 넘기면 검출도 그 방향으로 돈다.
    * tiles 는 화면을 몇 등분해 볼지다. 1 이면 한 번, 2 면 전체 + 2x2 = 다섯 번. */
   async detect(src, opts = {}) {
-    const { conf = 0.25, iouThr = 0.55, maxBoxes = 300, tiles = 1 } = opts;
+    const { conf = 0.25, iouThr = 0.55, maxBoxes = 500, tiles = 1 } = opts;
     if (!this.session) return [];
     const W = src.videoWidth || src.width, H = src.videoHeight || src.height;
     if (!W || !H) return [];
@@ -130,16 +145,17 @@ export class Detector {
     const name = this.session.inputNames[0];
     const out = await this.session.run(
       { [name]: new ort.Tensor("float32", f, [1, 3, INPUT, INPUT]) });
-    const d = out[this.session.outputNames[0]].data;
+    const bx = out[this.out.boxes].data, sc = out[this.out.scores].data,
+          cl = out[this.out.classes].data;
+    const anchors = sc.length;
 
     const cand = [];
-    for (let i = 0; i < ANCHORS; i++) {
-      const s = d[PERSON_ROW * ANCHORS + i];
-      if (s < conf) continue;
-      const cx = d[i], cy = d[ANCHORS + i];
-      const bw = d[2 * ANCHORS + i], bh = d[3 * ANCHORS + i];
+    for (let i = 0; i < anchors; i++) {
+      if (sc[i] < conf || cl[i] !== HEAD_CLASS) continue;
+      const o = i * 4;
+      const cx = bx[o], cy = bx[o + 1], bw = bx[o + 2], bh = bx[o + 3];
       cand.push({
-        score: s, pass,
+        score: sc[i], pass,
         x1: sx + (cx - bw / 2 - dx) / r, y1: sy + (cy - bh / 2 - dy) / r,
         x2: sx + (cx + bw / 2 - dx) / r, y2: sy + (cy + bh / 2 - dy) / r,
       });
@@ -197,7 +213,7 @@ function merge(passes, thr, max) {
   return keep;
 }
 
-/* 12 MB 를 내려받는 동안 진행률을 보여 준다. 아무 표시가 없으면 멈춘 줄 안다. */
+/* 38 MB 를 내려받는 동안 진행률을 보여 준다. 아무 표시가 없으면 멈춘 줄 안다. */
 async function fetchWithProgress(url, onProgress) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`모델을 받지 못했습니다 (${res.status})`);

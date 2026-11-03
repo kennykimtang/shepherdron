@@ -59,8 +59,10 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;letter
 .tb.act{background:var(--accent);color:#fff;font-weight:500}
 .tb.act:hover{background:var(--accent);filter:brightness(1.07)}
 .tb:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-select{background:var(--card);border:1px solid var(--edge);color:var(--ink2);
+select,#areaIn{background:var(--card);border:1px solid var(--edge);color:var(--ink2);
   border-radius:6px;padding:5px 8px;font:inherit;font-size:12.5px}
+#areaIn{width:96px}
+#areaIn::placeholder{color:var(--ink3)}
 #clock{font-size:13px;color:var(--ink3);white-space:nowrap}
 .vr{width:1px;height:16px;background:var(--edge);margin:0 3px}
 
@@ -230,9 +232,11 @@ select{background:var(--card);border:1px solid var(--edge);color:var(--ink2);
       <button class="tb" id="btnRot" type="button" hidden title="r — 영상이 누워 있을 때">회전</button>
       <button class="tb" id="btnCamFull" type="button" hidden title="c">카메라 크게</button>
       <button class="tb" id="btnFull" type="button" title="f">창 전체화면</button>
+      <input id="areaIn" type="number" min="1" step="1" placeholder="촬영 면적 ㎡"
+             title="찍고 있는 구역의 실제 넓이. 넣으면 밀도가 정확해진다" hidden>
       <select id="tileSel" title="t — 화면 분할 (멀리 있는 사람까지 보려면 올린다)" hidden>
-        <option value="1">분할 없음 · 빠름</option>
-        <option value="2" selected>2×2 분할</option>
+        <option value="1" selected>분할 없음</option>
+        <option value="2">2×2 분할</option>
         <option value="3">3×3 분할 · 느림</option>
       </select>
       <select id="everySel" title="검출 주기" hidden>

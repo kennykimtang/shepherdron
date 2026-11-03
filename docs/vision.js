@@ -6,6 +6,11 @@
  */
 
 export const PERSON_H_M = 1.7;
+/* 머리 박스 세로를 축척의 기준자로 쓴다. 성인 머리는 턱 끝에서 정수리까지
+ * 대략 0.23 m 다. 전신보다 짧아 한 사람만 보면 오차가 크지만, 군중에서는
+ * 수십~수백 개가 동시에 잡혀 회귀로 평균이 난다. 실제 면적을 알고 있으면
+ * mPerPx 로 넣어 이 추정을 통째로 대신할 수 있다 — 그쪽이 늘 더 정확하다. */
+export const HEAD_H_M = 0.23;
 export const DEFAULT_TIERS = [1, 2, 3, 4];
 
 /* 등급 색. 채도를 낮춰 한 계열로 읽히게 맞췄다. 히트맵도 같은 값을 쓰므로
@@ -27,15 +32,15 @@ export const levelTag = (i) => `${i}-${levelInfo(i).name}`;
  * 사람마다 가우시안을 깔고 더한다. 격자가 없으므로 셀 경계에 걸린 군집도
  * 하나로 잡힌다. 균일한 군중에서는 실제 밀집도로 수렴한다.
  *
- * 거리 환산은 겉보기 크기로 한다. 사람 키를 1.7 m 로 두면 바운딩박스
- * 높이가 그 지점의 축척(m/px)을 준다. 발목점 투영과 같은 가정이다.
+ * 거리 환산은 겉보기 크기로 한다. 머리 세로를 0.23 m 로 두면 박스 높이가
+ * 그 지점의 축척(m/px)을 준다. mPerPx 를 주면 화면 전체에 그 값을 쓴다.
  */
-export function densityField(people, sigmaM = 0.75) {
+export function densityField(people, sigmaM = 0.75, mPerPx = null) {
   const n = people.length;
   const out = { perPerson: [], peak: 0, peakIndex: -1, mean: 0, sigmaM };
   if (!n) return out;
 
-  const scales = people.map((p) => PERSON_H_M / Math.max(1, p.boxH));
+  const scales = people.map((p) => mPerPx ?? HEAD_H_M / Math.max(1, p.boxH));
   const inv = 1 / (2 * Math.PI * sigmaM * sigmaM);
   const two = 2 * sigmaM * sigmaM;
 
@@ -60,7 +65,7 @@ export function densityField(people, sigmaM = 0.75) {
 }
 
 /* 표시용 저해상도 장. 사람마다 가우시안 패치를 더한다. */
-export function densityRaster(people, sigmaM, srcW, srcH, fieldW = 160) {
+export function densityRaster(people, sigmaM, srcW, srcH, fieldW = 160, mPerPx = null) {
   const fw = Math.max(16, Math.min(fieldW, srcW));
   const fh = Math.max(9, Math.round((srcH * fw) / srcW));
   const heat = new Float32Array(fw * fh);
@@ -71,7 +76,7 @@ export function densityRaster(people, sigmaM, srcW, srcH, fieldW = 160) {
   const two = 2 * sigmaM * sigmaM;
 
   for (const p of people) {
-    const s = PERSON_H_M / Math.max(1, p.boxH);
+    const s = mPerPx ?? HEAD_H_M / Math.max(1, p.boxH);
     let sp = (sigmaM / Math.max(s, 1e-6)) * k;
     sp = Math.max(1, Math.min(sp, Math.max(fw, fh)));
     const cx = p.x * k, cy = p.y * k;
@@ -117,6 +122,16 @@ export function pointInPolygon(x, y, poly) {
   return inside;
 }
 
+/* 다각형이 덮는 픽셀 넓이. 실제 면적을 알고 있을 때 축척(m/px)을 역산하는 데 쓴다. */
+export function polygonAreaPx(poly, srcW, srcH, step = 8) {
+  const p = poly && poly.length >= 3
+    ? poly : [[0, 0], [srcW - 1, 0], [srcW - 1, srcH - 1], [0, srcH - 1]];
+  let n = 0;
+  for (let y = 0; y < srcH; y += step)
+    for (let x = 0; x < srcW; x += step) if (pointInPolygon(x, y, p)) n++;
+  return n * step * step;
+}
+
 export function estimateAreaM2(poly, perPerson, srcW, srcH, step = 8) {
   const m = scaleModel(perPerson);
   if (!m) return null;
@@ -153,10 +168,20 @@ export function analyzeRoi(field, poly, srcW, srcH, opts = {}) {
 /* ───────────────── 전술 투영 ───────────────── */
 export const focalPx = (w, hfovDeg) => (w / 2) / Math.tan((hfovDeg * Math.PI) / 180 / 2);
 
-export function project(people, srcW, hfovDeg) {
-  const f = focalPx(srcW, hfovDeg), cx = srcW / 2;
+export function project(people, srcW, hfovDeg, mPerPx = null) {
+  const cx = srcW / 2;
+  // 실제 축척을 아는 경우엔 바닥을 평면으로 본다. 내려다보는 카메라에서는
+  // 겉보기 크기로 거리를 되짚는 것보다 이쪽이 맞다.
+  if (mPerPx) {
+    const base = Math.max(...people.map((p) => p.y), 1);
+    return people.map((p) => ({
+      right: (p.x - cx) * mPerPx,
+      forward: Math.max(0.3, (base - p.y) * mPerPx + 1),
+    }));
+  }
+  const f = focalPx(srcW, hfovDeg);
   return people.map((p) => {
-    const rng = (f * PERSON_H_M) / Math.max(1, p.boxH);
+    const rng = (f * HEAD_H_M) / Math.max(1, p.boxH);
     return { right: ((p.x - cx) / f) * rng, forward: rng };
   });
 }
@@ -192,8 +217,8 @@ export function evacuationBearing(pts, hotspot, sigmaM, hfovDeg, maxRangeM, radi
   return best;
 }
 
-export function buildPicture(people, srcW, sigmaM, hfovDeg) {
-  const pts = project(people, srcW, hfovDeg);
+export function buildPicture(people, srcW, sigmaM, hfovDeg, mPerPx = null) {
+  const pts = project(people, srcW, hfovDeg, mPerPx);
   const pic = { people: [], hotspot: null, hotspotDensity: 0, evacuation: null, maxRange: 0 };
   if (!pts.length) return pic;
   pic.people = pts.map((p) => ({ ...p, density: groundDensity([p.right, p.forward], pts, sigmaM) }));
