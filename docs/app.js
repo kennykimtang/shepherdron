@@ -30,7 +30,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", readToke
 
 const S = {
   running: false, stream: null, model: null,
-  heat: true, boxes: true, roi: null, areaM2: null,
+  heat: true, boxes: true, roi: null, areaM2: null, tiles: 2,
   hfov: 70, sigma: 0.75, tiers: V.DEFAULT_TIERS,
   level: new V.LevelFilter(8),
   alert: new V.AlertDebouncer(15, 0.6, 0.25, 4),
@@ -140,7 +140,7 @@ function fail(text) {
 /* 실행 중에만 보이는 조작 */
 function showRunControls(on) {
   for (const id of ["btnSource", "btnDispatch", "vr1", "btnHeat", "btnBox",
-                    "btnRot", "btnCamFull", "everySel"]) {
+                    "btnRot", "btnCamFull", "tileSel", "everySel"]) {
     $(id).hidden = !on;
   }
 }
@@ -189,7 +189,7 @@ function drawLoop() {
     const src = uprightFrame(v);
     const r = S.view;
     if (r) {
-      drawView(src, src.width, src.height, S.lastPeople, r.roi);
+      drawView(src, src.width, src.height, r.people, r.roi);
       drawTac(r.pic);
       drawTrend();
       writePanels(r.roi, r.pic);
@@ -206,7 +206,7 @@ async function detectLoop() {
     if (v.readyState < 2 || !v.videoWidth || !srcCv.width) { await sleep(60); continue; }
     const t0 = performance.now();
     try {
-      const preds = await S.det.detect(srcCv, 0.3, 0.45);
+      const preds = await S.det.detect(srcCv, { tiles: S.tiles });
       S.lastPeople = preds.map((p) => ({
         x: p.bbox[0] + p.bbox[2] / 2, y: p.bbox[1] + p.bbox[3],
         boxH: p.bbox[3], bbox: p.bbox,
@@ -250,7 +250,7 @@ function analyse(W, H, now) {
   }
   S.link?.report?.({ n: roi.count, peak: +roi.peakDensity.toFixed(2),
                      lv: V.levelTag(roi.level), msn: V.MISSION[S.mission.state] });
-  S.view = { roi, pic, field };
+  S.view = { roi, pic, field, people };
 }
 
 const push = (a, v) => { a.push(v); if (a.length > 240) a.shift(); };
@@ -657,6 +657,10 @@ const toggle = (id, key) => {
 };
 toggle("btnHeat", "heat"); toggle("btnBox", "boxes");
 $("everySel").onchange = (e) => { S.every = Math.max(1, +e.target.value || 1); };
+$("tileSel").onchange = (e) => {
+  S.tiles = Math.max(1, +e.target.value || 1);
+  addLog(S.tiles > 1 ? `화면을 ${S.tiles}×${S.tiles} 로 나눠 봅니다` : "화면 전체를 한 번에 봅니다");
+};
 const goFull = (el) => (document.fullscreenElement
   ? document.exitFullscreen() : el.requestFullscreen?.().catch(() => {}));
 $("btnFull").onclick = () => goFull(document.documentElement);
@@ -673,6 +677,11 @@ addEventListener("keydown", (e) => {
   else if (k === "f") $("btnFull").click();
   else if (k === "r" && !$("btnRot").hidden) $("btnRot").click();
   else if (k === "c" && !$("btnCamFull").hidden) $("btnCamFull").click();
+  else if (k === "t" && !$("tileSel").hidden) {           // 분할 단계를 돌려 가며 본다
+    const s = $("tileSel");
+    s.selectedIndex = (s.selectedIndex + 1) % s.options.length;
+    s.dispatchEvent(new Event("change"));
+  }
 });
 /* ── 폰 : ?cam=CODE 로 열리면 카메라 모드 ── */
 async function runCameraMode(code) {

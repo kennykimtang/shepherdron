@@ -230,6 +230,11 @@ select{background:var(--card);border:1px solid var(--edge);color:var(--ink2);
       <button class="tb" id="btnRot" type="button" hidden title="r — 영상이 누워 있을 때">회전</button>
       <button class="tb" id="btnCamFull" type="button" hidden title="c">카메라 크게</button>
       <button class="tb" id="btnFull" type="button" title="f">창 전체화면</button>
+      <select id="tileSel" title="t — 화면 분할 (멀리 있는 사람까지 보려면 올린다)" hidden>
+        <option value="1">분할 없음 · 빠름</option>
+        <option value="2" selected>2×2 분할</option>
+        <option value="3">3×3 분할 · 느림</option>
+      </select>
       <select id="everySel" title="검출 주기" hidden>
         <option value="1">검출 매 프레임</option>
         <option value="2">검출 1/2</option>
