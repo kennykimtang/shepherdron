@@ -11,7 +11,7 @@ https://kennykimtang.github.io/shepherdron/
 | `detector.js` | 머리 검출 · 타일 분할 추론 (onnxruntime-web, WebGPU → WASM) |
 | `link.js` | 폰 ↔ PC WebRTC 연결 · QR |
 | `app.js` | 화면 그리기 · 조작 |
-| `head.onnx` | CrowdHuman person+head YOLOv11s 가중치 (38 MB) |
+| `head.onnx` | 머리 검출 YOLO11n 가중치 (11 MB, AGPL-3.0) |
 
 쓰는 방법 세 가지
 
@@ -32,6 +32,22 @@ node 로 검증할 수 있습니다.
 전부였습니다. 군중에서 끝까지 보이는 건 머리뿐이라 CrowdHuman 으로 학습한
 person+head 모델(huggingface.co/Sharath33/Person, openrail++)의 head
 클래스로 바꿨습니다. 같은 사진 같은 조건에서 136명이 나옵니다.
+
+모델은 네 가지를 재 보고 YOLO11n 머리 전용
+(huggingface.co/wesjos/YOLO-head-detection, AGPL-3.0)을 골랐습니다.
+추론이 느리면 박스가 영상보다 늦게 따라와 눈에 띄게 어긋나므로, 군중
+검출에서는 조금 덜 잡더라도 빠른 쪽이 낫습니다.
+
+| 모델 | 크기 | 머리 | 지연 (CPU) |
+|---|---|---|---|
+| CrowdHuman 11s 2클래스 | 38 MB | 136 | 303 ms |
+| **11n-head** | **11 MB** | **120** | **94 ms** |
+| v8n-head | 12 MB | 118 | 110 ms |
+| 11s-head | 38 MB | 101 | 253 ms |
+
+검출에 넘긴 프레임을 따로 떠 두고 그 위에 결과를 그립니다. 살아 있는 영상
+위에 그리면 박스가 한두 프레임 전 머리 자리에 찍힙니다. 툴바의 프레임
+맞춤(`s`)으로 끌 수 있습니다.
 
 멀리 있는 사람까지 봐야 할 때는 화면을 NxN 으로 쪼개 조각마다 추론을
 돌립니다(툴바 분할, 단축키 `t`). 조각이 맡는 넓이가 1/N² 이라 같은 사람이

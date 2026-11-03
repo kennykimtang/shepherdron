@@ -194,7 +194,7 @@ function drawLoop() {
     const src = uprightFrame(v);          // 다음 검출이 쓸 프레임은 계속 갱신한다
     const r = S.view;
     if (r) {
-      const shown = S.sync && S.detReady ? detCv : src;
+      const shown = S.sync && S.detReady ? showCv : src;
       drawView(shown, shown.width, shown.height, r.people, r.roi);
       drawTac(r.pic);
       drawTrend();
@@ -225,8 +225,12 @@ async function detectLoop() {
     const dt = (performance.now() - t0) / 1000;
     S.dps = S.dps ? S.dps * 0.8 + (1 / Math.max(1e-3, dt)) * 0.2 : 1 / dt;
 
-    S.detReady = true;
     analyse(detCv.width, detCv.height, performance.now() / 1000);
+    if (showCv.width !== detCv.width || showCv.height !== detCv.height) {
+      showCv.width = detCv.width; showCv.height = detCv.height;
+    }
+    showCtx.drawImage(detCv, 0, 0);
+    S.detReady = true;
     if (S.every > 1) await sleep((S.every - 1) * 1000 / 30);
     else await sleep(0);
   }
@@ -283,9 +287,16 @@ const push = (a, v) => { a.push(v); if (a.length > 240) a.shift(); };
  */
 /* 검출에 넘긴 바로 그 프레임을 떠 둔다. 영상은 초당 30장 흐르는데 검출은
  * 그보다 느려서, 살아 있는 영상 위에 결과를 그리면 박스가 한두 프레임 전
- * 머리 자리에 찍힌다. 사람이 움직이면 눈에 띄게 어긋난다. */
+ * 머리 자리에 찍힌다. 사람이 움직이면 눈에 띄게 어긋난다.
+ *
+ * 버퍼가 둘인 이유. detCv 는 지금 추론에 들어가 있는 프레임이고, showCv 는
+ * 화면에 떠 있는 결과와 짝이 맞는 프레임이다. 하나로 돌리면 다음 추론이
+ * 시작되는 순간 그림이 새 프레임으로 바뀌는데 박스는 아직 이전 것이라,
+ * 추론이 도는 내내 다시 어긋난다. 추론이 끝나고 판단까지 마친 뒤에 옮긴다. */
 const detCv = document.createElement("canvas");
 const detCtx = detCv.getContext("2d");
+const showCv = document.createElement("canvas");
+const showCtx = showCv.getContext("2d");
 const srcCv = document.createElement("canvas");
 const srcCtx = srcCv.getContext("2d");
 

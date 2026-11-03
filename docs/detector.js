@@ -1,7 +1,15 @@
 /* 브라우저 머리 검출 — onnxruntime-web.
  *
- * 쓰는 가중치는 CrowdHuman 으로 학습한 person+head 2클래스 YOLOv11s 다
- * (huggingface.co/Sharath33/Person, openrail++). 그중 head 클래스만 쓴다.
+ * 쓰는 가중치는 머리 한 클래스만 학습한 YOLO11n 이다
+ * (huggingface.co/wesjos/YOLO-head-detection, AGPL-3.0).
+ * 같은 저자의 11s 와 CrowdHuman 2클래스 11s 도 재 봤는데, 11n 이 머리를
+ * 88% 만큼 잡으면서 세 배 빨랐다. 추론이 느리면 박스가 영상보다 늦게 따라와
+ * 눈에 띄게 어긋나므로, 군중 검출에서는 이쪽이 낫다.
+ *   (1280x720 마라톤 출발선, conf 0.25, CPU)
+ *     CrowdHuman 11s 2클래스  38MB  136개  303ms
+ *     11n-head                11MB  120개   94ms
+ *     v8n-head                12MB  118개  110ms
+ *     11s-head                38MB  101개  253ms
  *
  * COCO 로 학습한 yolov8n 의 person 은 전신 박스를 기대하고 배운 탓에, 몸통이
  * 앞사람에 가린 군중에서는 거의 못 잡는다. 마라톤 출발선 사진(2589x1458,
@@ -11,9 +19,9 @@
  *
  *   1. 640x640 레터박스, 여백은 114, 가운데 정렬
  *   2. RGB · CHW · /255
- *   3. 출력은 boxes[1,8400,4](cx,cy,w,h) · scores[1,8400,1] · classes[1,8400,1]
- *      — yolov8n 의 [1,84,8400] 과 달리 클래스 argmax 까지 그래프 안에서 끝난다.
- *      classes 1 이 head 다.
+ *   3. 출력 [1,5,8400] 에서 0~3 행이 cx,cy,w,h, 4 행이 머리 점수
+ *      — 클래스가 하나뿐이라 coco 80 클래스판의 84 행이 5 행으로 줄었다.
+ *      내보내기에 따라 boxes/scores/classes 세 갈래로 나오기도 해서 둘 다 받는다.
  *   4. 레터박스를 되돌려 원본 좌표로
  *   5. IoU NMS
  *
@@ -68,13 +76,13 @@ export class Detector {
         this.backend = ep === "webgpu" ? "GPU" : "CPU";
         // 출력 이름으로 찾는다. 순서에 기대면 다른 내보내기에서 조용히 어긋난다.
         const names = this.session.outputNames;
-        this.out = {
+        const split = {
           boxes: names.find((s) => /box/i.test(s)),
           scores: names.find((s) => /score|conf/i.test(s)),
           classes: names.find((s) => /class|label/i.test(s)),
         };
-        if (!this.out.boxes || !this.out.scores || !this.out.classes)
-          throw new Error(`모델 출력이 예상과 다릅니다 (${names.join(", ")})`);
+        this.out = (split.boxes && split.scores && split.classes)
+          ? split : { single: names[0] };
         return this;
       } catch (e) { last = e; }
     }
@@ -145,20 +153,31 @@ export class Detector {
     const name = this.session.inputNames[0];
     const out = await this.session.run(
       { [name]: new ort.Tensor("float32", f, [1, 3, INPUT, INPUT]) });
-    const bx = out[this.out.boxes].data, sc = out[this.out.scores].data,
-          cl = out[this.out.classes].data;
-    const anchors = sc.length;
-
     const cand = [];
-    for (let i = 0; i < anchors; i++) {
-      if (sc[i] < conf || cl[i] !== HEAD_CLASS) continue;
-      const o = i * 4;
-      const cx = bx[o], cy = bx[o + 1], bw = bx[o + 2], bh = bx[o + 3];
-      cand.push({
-        score: sc[i], pass,
-        x1: sx + (cx - bw / 2 - dx) / r, y1: sy + (cy - bh / 2 - dy) / r,
-        x2: sx + (cx + bw / 2 - dx) / r, y2: sy + (cy + bh / 2 - dy) / r,
-      });
+    const put = (cx, cy, bw, bh, s) => cand.push({
+      score: s, pass,
+      x1: sx + (cx - bw / 2 - dx) / r, y1: sy + (cy - bh / 2 - dy) / r,
+      x2: sx + (cx + bw / 2 - dx) / r, y2: sy + (cy + bh / 2 - dy) / r,
+    });
+
+    if (this.out.single) {
+      const o = out[this.out.single];
+      const rows = o.dims[1], A = o.dims[2], d = o.data;
+      // 2클래스로 내보낸 모델이면 머리 점수가 5행, 1클래스면 4행이다.
+      const row = rows >= 6 ? 4 + HEAD_CLASS : 4;
+      for (let i = 0; i < A; i++) {
+        const s = d[row * A + i];
+        if (s < conf) continue;
+        put(d[i], d[A + i], d[2 * A + i], d[3 * A + i], s);
+      }
+    } else {
+      const bx = out[this.out.boxes].data, sc = out[this.out.scores].data,
+            cl = out[this.out.classes].data;
+      for (let i = 0; i < sc.length; i++) {
+        if (sc[i] < conf || cl[i] !== HEAD_CLASS) continue;
+        const o = i * 4;
+        put(bx[o], bx[o + 1], bx[o + 2], bx[o + 3], sc[i]);
+      }
     }
     return cand;
   }
@@ -213,7 +232,7 @@ function merge(passes, thr, max) {
   return keep;
 }
 
-/* 38 MB 를 내려받는 동안 진행률을 보여 준다. 아무 표시가 없으면 멈춘 줄 안다. */
+/* 11 MB 를 내려받는 동안 진행률을 보여 준다. 아무 표시가 없으면 멈춘 줄 안다. */
 async function fetchWithProgress(url, onProgress) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`모델을 받지 못했습니다 (${res.status})`);
