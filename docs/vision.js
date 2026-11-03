@@ -153,8 +153,21 @@ export function analyzeRoi(field, poly, srcW, srcH, opts = {}) {
 
   const areaGiven = opts.areaM2 != null;
   const area = areaGiven ? opts.areaM2 : estimateAreaM2(polygon, field.perPerson, srcW, srcH);
-  let peak = 0, peakPoint = null;
-  for (const p of inside) if (p.density > peak) { peak = p.density; peakPoint = [p.x, p.y]; }
+  // 영상 위 표시도 한 사람의 최댓값이 아니라 무리의 무게중심을 쓴다.
+  // 비슷한 점이 수십 개라 최댓값만 고르면 표시가 옆 사람으로 옮겨 다닌다.
+  let peak = 0;
+  for (const p of inside) if (p.density > peak) peak = p.density;
+  let peakPoint = null;
+  if (peak > 0) {
+    const cut = peak * 0.8;
+    let wx = 0, wy = 0, w = 0;
+    for (const p of inside) {
+      if (p.density < cut) continue;
+      const k = p.density - cut + 1e-9;
+      wx += p.x * k; wy += p.y * k; w += k;
+    }
+    if (w > 0) peakPoint = [wx / w, wy / w];
+  }
   const density = area && area > 0 ? inside.length / area : 0;
 
   return {
@@ -204,29 +217,92 @@ export function inView(q, hfovDeg, maxRangeM, marginDeg = 2) {
 }
 
 /* 핫스팟에서 가장 덜 붐비면서 카메라가 보고 있는 방향.
- * 보이지 않는 곳은 후보에서 뺀다 — 비어 보이는 것과 비어 있는 것은 다르다. */
-export function evacuationBearing(pts, hotspot, sigmaM, hfovDeg, maxRangeM, radiusM = 2.5, stepDeg = 15) {
-  let best = null;
+ * 보이지 않는 곳은 후보에서 뺀다 — 비어 보이는 것과 비어 있는 것은 다르다.
+ *
+ * prevBearing 을 주면 그쪽을 먼저 본다. 15도 간격으로 끊어 고르는 탓에, 두
+ * 방향의 밀집도가 비슷하면 매 프레임 번갈아 뽑혀 화살표가 떤다. 이전 방향이
+ * stick 배 안쪽이면 그대로 둔다. */
+export function evacuationBearing(pts, hotspot, sigmaM, hfovDeg, maxRangeM,
+                                  radiusM = 2.5, stepDeg = 15,
+                                  prevBearing = null, stick = 1.3) {
+  let best = null, prev = null;
   for (let k = 0; k < Math.round(360 / stepDeg); k++) {
     const th = k * stepDeg, rad = (th * Math.PI) / 180;
     const q = [hotspot[0] + radiusM * Math.sin(rad), hotspot[1] + radiusM * Math.cos(rad)];
     if (!inView(q, hfovDeg, maxRangeM)) continue;
     const d = groundDensity(q, pts, sigmaM);
-    if (!best || d < best.density - 1e-9) best = { bearing: th, density: d, point: q, name: bearingName(th) };
+    const c = { bearing: th, density: d, point: q, name: bearingName(th) };
+    if (!best || d < best.density - 1e-9) best = c;
+    if (prevBearing != null && th === prevBearing) prev = c;
   }
+  if (prev && best && prev.density <= best.density * stick) return prev;
   return best;
 }
 
-export function buildPicture(people, srcW, sigmaM, hfovDeg, mPerPx = null) {
+/* 가장 붐비는 '한 사람' 이 아니라 '무리' 의 무게중심을 목표로 삼는다.
+ * 사람이 수백 명이면 최댓값 근처에 비슷한 점이 수십 개라, 한 명만 고르면
+ * 매 프레임 옆 사람으로 옮겨 다닌다. 최댓값의 ratio 이상인 점들을 밀집도로
+ * 가중평균하면 그 떨림이 사라지고, 무리가 실제로 움직일 때만 따라간다. */
+export function densePeak(people, ratio = 0.8) {
+  if (!people.length) return null;
+  const peak = Math.max(...people.map((p) => p.density));
+  const cut = peak * ratio;
+  let wx = 0, wy = 0, w = 0;
+  for (const p of people) {
+    if (p.density < cut) continue;
+    const k = p.density - cut + 1e-9;            // 경계에 걸친 점의 영향을 줄인다
+    wx += p.right * k; wy += p.forward * k; w += k;
+  }
+  if (w <= 0) return { point: null, density: peak };
+  return { point: [wx / w, wy / w], density: peak };
+}
+
+/* 프레임마다 다시 계산한 목표를 시간축으로 눌러 준다.
+ *   deadbandM 안쪽 : 무시한다. 검출이 한둘 바뀔 때마다 나는 잔떨림이다.
+ *   jumpM 바깥쪽   : 바로 따라가지 않고, 그 자리에 jumpHoldS 만큼 머무르는지
+ *                    확인한 뒤 옮긴다. 한 프레임짜리 오검출에 끌려가지 않는다.
+ *   그 사이        : 시정수 tau 의 지수평활로 천천히 끌어간다. */
+export class HotspotFilter {
+  constructor({ tau = 1.2, deadbandM = 0.6, jumpM = 3, jumpHoldS = 1.2 } = {}) {
+    Object.assign(this, { tau, deadbandM, jumpM, jumpHoldS });
+    this.value = null; this._t = null; this._cand = null; this._candAt = 0;
+  }
+  reset() { this.value = null; this._t = null; this._cand = null; }
+  update(p, t) {
+    const dt = this._t == null ? 0 : Math.max(0, Math.min(t - this._t, 1));
+    this._t = t;
+    if (!p) return this.value;
+    if (!this.value) { this.value = p.slice(); return this.value; }
+    const d = Math.hypot(p[0] - this.value[0], p[1] - this.value[1]);
+    if (d >= this.jumpM) {
+      if (this._cand && Math.hypot(p[0] - this._cand[0], p[1] - this._cand[1]) < this.jumpM) {
+        if (t - this._candAt >= this.jumpHoldS) { this.value = p.slice(); this._cand = null; }
+      } else { this._cand = p.slice(); this._candAt = t; }
+      return this.value;
+    }
+    this._cand = null;
+    if (d < this.deadbandM) return this.value;
+    const a = this.tau > 0 ? 1 - Math.exp(-dt / this.tau) : 1;
+    this.value = [this.value[0] + a * (p[0] - this.value[0]),
+                  this.value[1] + a * (p[1] - this.value[1])];
+    return this.value;
+  }
+}
+
+export function buildPicture(people, srcW, sigmaM, hfovDeg, mPerPx = null, prevBearing = null) {
   const pts = project(people, srcW, hfovDeg, mPerPx);
   const pic = { people: [], hotspot: null, hotspotDensity: 0, evacuation: null, maxRange: 0 };
   if (!pts.length) return pic;
   pic.people = pts.map((p) => ({ ...p, density: groundDensity([p.right, p.forward], pts, sigmaM) }));
-  pic.maxRange = Math.max(...pic.people.map((p) => Math.hypot(p.right, p.forward))) * 1.15;
-  const top = pic.people.reduce((a, b) => (b.density > a.density ? b : a));
-  pic.hotspot = [top.right, top.forward];
-  pic.hotspotDensity = top.density;
-  pic.evacuation = evacuationBearing(pts, pic.hotspot, sigmaM, hfovDeg, pic.maxRange);
+  // 최댓값 대신 95 분위를 쓴다. 멀리 하나 잘못 잡히면 사거리가 통째로 흔들린다.
+  const rs = pic.people.map((p) => Math.hypot(p.right, p.forward)).sort((a, b) => a - b);
+  pic.maxRange = rs[Math.min(rs.length - 1, Math.floor(rs.length * 0.95))] * 1.15;
+  const dp = densePeak(pic.people);
+  pic.hotspot = dp.point;
+  pic.hotspotDensity = dp.density;
+  if (pic.hotspot)
+    pic.evacuation = evacuationBearing(pts, pic.hotspot, sigmaM, hfovDeg, pic.maxRange,
+                                       2.5, 15, prevBearing);
   return pic;
 }
 
@@ -274,7 +350,7 @@ export const TRACK = ["IDLE", "NAVIGATING", "HOVERING", "RETRACTING", "RETURNING
 export const DEMO_CONFIG = {
   cruiseAltM: 3.0, speedMps: 1.6, climbMps: 1.0,
   arrivalRadiusM: 0.8, hoverS: 10, deployS: 3, retractS: 4,
-  cooldownS: 15, navTimeoutS: 60, retargetM: 1.5,
+  cooldownS: 15, navTimeoutS: 60, retargetM: 2.5,
 };
 
 export class Mission {
@@ -314,7 +390,10 @@ export class Mission {
     } else if (this.state === "NAVIGATING") {
       if (hotspot) {
         const d = Math.hypot(hotspot[0] - this.goal[0], hotspot[1] - this.goal[1]);
-        if (d >= C.retargetM) this.goal = hotspot.slice();   // 군중이 움직이면 재조준
+        // 군중이 실제로 옮겨 가면 따라가되, 다 와 가면 더 건드리지 않는다.
+        // 도착 직전에 목표를 흔들면 기체가 그 자리를 맴돈다.
+        const near = Math.hypot(this.goal[0] - this.pos[0], this.goal[1] - this.pos[1]);
+        if (d >= C.retargetM && near > C.arrivalRadiusM * 2) this.goal = hotspot.slice();
       }
       if (t - this._entered > C.navTimeoutS) {
         this.goal = [0, 0];

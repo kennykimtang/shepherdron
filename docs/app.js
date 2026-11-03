@@ -32,6 +32,7 @@ const S = {
   running: false, stream: null, model: null,
   heat: true, boxes: true, roi: null, areaM2: null, tiles: 1,
   hfov: 70, sigma: 0.75, tiers: V.DEFAULT_TIERS,
+  hot: new V.HotspotFilter(), hotPx: new V.HotspotFilter(), lastBearing: null,
   level: new V.LevelFilter(8),
   alert: new V.AlertDebouncer(15, 0.6, 0.25, 4),
   mission: new V.Mission(),
@@ -232,7 +233,13 @@ function analyse(W, H, now) {
   const field = V.densityField(people, S.sigma, mPerPx);
   const roi = V.analyzeRoi(field, S.roi, W, H, { tiers: S.tiers, areaM2: S.areaM2 });
   roi.level = S.level.update(roi.level);
-  const pic = V.buildPicture(people, W, S.sigma, S.hfov, mPerPx);
+  // 화면 표시도 같은 이유로 걸러 준다. 단위가 픽셀이라 문턱을 화면폭에 맞춘다.
+  S.hotPx.deadbandM = W * 0.012; S.hotPx.jumpM = W * 0.06;
+  roi.peakPoint = S.hotPx.update(roi.peakPoint, now);
+  const pic = V.buildPicture(people, W, S.sigma, S.hfov, mPerPx, S.lastBearing);
+  S.lastBearing = pic.evacuation ? pic.evacuation.bearing : null;
+  // 목표는 걸러서 쓴다. 검출이 한둘 바뀔 때마다 그대로 따라가면 기체가 떤다.
+  pic.hotspot = S.hot.update(pic.hotspot, now);
 
   const active = S.alert.update(roi.level >= 3, now);
   S.mission.update(active && !S.lastActive, active, roi.count, pic.hotspot, now);
