@@ -62,6 +62,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;letter
 select,#areaIn{background:var(--card);border:1px solid var(--edge);color:var(--ink2);
   border-radius:6px;padding:5px 8px;font:inherit;font-size:12.5px}
 #areaIn{width:96px}
+.est{font-size:10px;letter-spacing:.04em;color:var(--ink3);border:1px solid var(--edge);
+  border-radius:3px;padding:0 3px;vertical-align:1px}
 #areaIn::placeholder{color:var(--ink3)}
 #clock{font-size:13px;color:var(--ink3);white-space:nowrap}
 .vr{width:1px;height:16px;background:var(--edge);margin:0 3px}
@@ -229,6 +231,7 @@ select,#areaIn{background:var(--card);border:1px solid var(--edge);color:var(--i
       <span class="vr" id="vr1" hidden></span>
       <button class="tb" id="btnHeat" type="button" aria-pressed="true" hidden title="h">밀집도</button>
       <button class="tb" id="btnBox" type="button" aria-pressed="true" hidden title="b">검출</button>
+      <button class="tb" id="btnSync" type="button" aria-pressed="true" hidden title="s — 검출한 프레임을 그대로 보여 준다. 끄면 영상은 매끄럽지만 박스가 뒤따른다">프레임 맞춤</button>
       <button class="tb" id="btnRot" type="button" hidden title="r — 영상이 누워 있을 때">회전</button>
       <button class="tb" id="btnCamFull" type="button" hidden title="c">카메라 크게</button>
       <button class="tb" id="btnFull" type="button" title="f">창 전체화면</button>
@@ -299,7 +302,7 @@ select,#areaIn{background:var(--card);border:1px solid var(--edge);color:var(--i
 
       <div class="card" id="readout">
         <div><div class="k">인원</div><div class="v" id="rCount">0</div></div>
-        <div><div class="k">면적</div><div class="v"><span id="rArea">0</span><span class="u">㎡</span></div></div>
+        <div><div class="k">면적 <span id="estFlag" class="est" hidden>추정</span></div><div class="v"><span id="rArea">0</span><span class="u">㎡</span></div></div>
         <div><div class="k">군중밀도</div><div class="v"><span id="rDens">0.00</span><span class="u">명/㎡</span></div></div>
         <div><div class="k">국부 최대</div><div class="v"><span id="rPeak">0.00</span><span class="u">명/㎡</span></div></div>
         <div><div class="k">등급</div>

@@ -33,6 +33,7 @@ const S = {
   heat: true, boxes: true, roi: null, areaM2: null, tiles: 1,
   hfov: 70, sigma: 0.75, tiers: V.DEFAULT_TIERS,
   hot: new V.HotspotFilter(), hotPx: new V.HotspotFilter(), lastBearing: null,
+  sync: true, detReady: false,
   level: new V.LevelFilter(8),
   alert: new V.AlertDebouncer(15, 0.6, 0.25, 4),
   mission: new V.Mission(),
@@ -141,7 +142,7 @@ function fail(text) {
 /* 실행 중에만 보이는 조작 */
 function showRunControls(on) {
   for (const id of ["btnSource", "btnDispatch", "vr1", "btnHeat", "btnBox",
-                    "btnRot", "btnCamFull", "areaIn", "tileSel", "everySel"]) {
+                    "btnRot", "btnCamFull", "btnSync", "areaIn", "tileSel", "everySel"]) {
     $(id).hidden = !on;
   }
 }
@@ -153,13 +154,16 @@ async function begin() {
     note("준비 중");
     try { S.det = await new Detector().load(note); }
     catch (e) { return fail(`인식 모델을 준비하지 못했습니다. ${e.message}`); }
-    addLog(`검출 준비 · YOLOv8n ${S.det.backend}`);
+    addLog(`검출 준비 · 머리 검출 ${S.det.backend}`);
   }
   stage(null);
   showRunControls(true);
   $("tacEmpty").hidden = true; $("tacCv").hidden = false;
   $("msnEmpty").hidden = true;
-  if (!S.running) { S.running = true; drawLoop(); detectLoop(); }
+  if (!S.running) {
+    S.running = true; drawLoop(); detectLoop();
+    if (!S.areaM2) addLog("촬영 구역의 실제 넓이를 툴바에 넣으면 밀도가 정확해집니다");
+  }
 }
 
 /* ── 로그 ── */
@@ -187,10 +191,11 @@ function drawLoop() {
     const now = performance.now() / 1000;
     if (S.lastT) S.fps = S.fps * 0.85 + (1 / Math.max(1e-3, now - S.lastT)) * 0.15;
     S.lastT = now;
-    const src = uprightFrame(v);
+    const src = uprightFrame(v);          // 다음 검출이 쓸 프레임은 계속 갱신한다
     const r = S.view;
     if (r) {
-      drawView(src, src.width, src.height, r.people, r.roi);
+      const shown = S.sync && S.detReady ? detCv : src;
+      drawView(shown, shown.width, shown.height, r.people, r.roi);
       drawTac(r.pic);
       drawTrend();
       writePanels(r.roi, r.pic);
@@ -206,8 +211,12 @@ async function detectLoop() {
     const v = $("video");
     if (v.readyState < 2 || !v.videoWidth || !srcCv.width) { await sleep(60); continue; }
     const t0 = performance.now();
+    if (detCv.width !== srcCv.width || detCv.height !== srcCv.height) {
+      detCv.width = srcCv.width; detCv.height = srcCv.height;
+    }
+    detCtx.drawImage(srcCv, 0, 0);
     try {
-      const preds = await S.det.detect(srcCv, { tiles: S.tiles });
+      const preds = await S.det.detect(detCv, { tiles: S.tiles });
       S.lastPeople = preds.map((p) => ({
         x: p.bbox[0] + p.bbox[2] / 2, y: p.bbox[1] + p.bbox[3],
         boxH: p.bbox[3], bbox: p.bbox,
@@ -216,7 +225,8 @@ async function detectLoop() {
     const dt = (performance.now() - t0) / 1000;
     S.dps = S.dps ? S.dps * 0.8 + (1 / Math.max(1e-3, dt)) * 0.2 : 1 / dt;
 
-    analyse(srcCv.width, srcCv.height, performance.now() / 1000);
+    S.detReady = true;
+    analyse(detCv.width, detCv.height, performance.now() / 1000);
     if (S.every > 1) await sleep((S.every - 1) * 1000 / 30);
     else await sleep(0);
   }
@@ -271,6 +281,11 @@ const push = (a, v) => { a.push(v); if (a.length > 240) a.shift(); };
  * 않는다. 그래서 폰을 가로로 들어도 세로 영상이 도착한다. 받는 쪽에서 세워
  * 놓은 뒤 검출과 표시 모두 이 캔버스를 쓴다.
  */
+/* 검출에 넘긴 바로 그 프레임을 떠 둔다. 영상은 초당 30장 흐르는데 검출은
+ * 그보다 느려서, 살아 있는 영상 위에 결과를 그리면 박스가 한두 프레임 전
+ * 머리 자리에 찍힌다. 사람이 움직이면 눈에 띄게 어긋난다. */
+const detCv = document.createElement("canvas");
+const detCtx = detCv.getContext("2d");
 const srcCv = document.createElement("canvas");
 const srcCtx = srcCv.getContext("2d");
 
@@ -541,6 +556,9 @@ function writePanels(roi, pic) {
   $("rArea").textContent = roi.areaM2 ? Math.round(roi.areaM2) : "—";
   $("rDens").textContent = roi.areaM2 ? roi.density.toFixed(2) : "—";
   $("rPeak").textContent = roi.peakDensity.toFixed(2);
+  // 면적을 넣지 않았으면 머리 크기로 어림한 값이다. 비스듬히 본 화면에서는
+  // 안쪽 깊이가 눌려 보여 실제보다 좁게 나오고, 그만큼 밀도가 높게 찍힌다.
+  $("estFlag").hidden = !roi.areaEstimated;
   const L = V.levelInfo(roi.level);
   $("lvTxt").textContent = V.levelTag(roi.level); $("lvTxt").style.color = L.color;
   [...$("lvBar").children].forEach((el, i) => {
@@ -666,7 +684,7 @@ $("btnDispatch").onclick = () => { S.mission.dispatch(); addLog("수동 출동",
 const toggle = (id, key) => {
   $(id).onclick = () => { S[key] = !S[key]; $(id).setAttribute("aria-pressed", String(S[key])); };
 };
-toggle("btnHeat", "heat"); toggle("btnBox", "boxes");
+toggle("btnHeat", "heat"); toggle("btnBox", "boxes"); toggle("btnSync", "sync");
 $("everySel").onchange = (e) => { S.every = Math.max(1, +e.target.value || 1); };
 $("areaIn").onchange = (e) => {
   const v = parseFloat(e.target.value);
@@ -691,6 +709,7 @@ addEventListener("keydown", (e) => {
   if (k === "m") $("btnDispatch").click();
   else if (k === "h") $("btnHeat").click();
   else if (k === "b") $("btnBox").click();
+  else if (k === "s" && !$("btnSync").hidden) $("btnSync").click();
   else if (k === "f") $("btnFull").click();
   else if (k === "r" && !$("btnRot").hidden) $("btnRot").click();
   else if (k === "c" && !$("btnCamFull").hidden) $("btnCamFull").click();
