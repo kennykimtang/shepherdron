@@ -73,7 +73,7 @@ FC·수신기·GPS/나침반·옵티컬플로우까지 공급합니다. 전류 �
 | `PC1` | Raspberry Pi 4 Model B 2GB | 컴패니언 · MAVLink 수신 + 페이로드 구동 |
 | `CAM1` | Camera Module 3 Wide | IMX708 · 102° H / 120° D · CSI-2 · **45° 하향 마운트** |
 | `U1` | UBEC 5 V / 5 A | 스위칭 강압 · 피크 3.15 A |
-| `U2` | MAX98357A | I2S class-D 앰프 · 3.3 V 로직 수용 |
+| `U2` | PAM8403 | 아날로그 class-D 앰프 3 W×2 @ 4 Ω · Pi 3.5 mm 잭 입력 |
 | `U3` | DMD-150 | H-브리지 · 6.5–40 V / 15 A · **5 V TTL 입력** |
 | `U4` | 74AHCT125 | 쿼드 버퍼 · 3.3 V → 5 V · **필수** |
 | `M5` | LMB2036U | 12 V · 120 N · **150 mm** · 2선 극성반전 |
@@ -116,15 +116,15 @@ BT1  PT-B2800N-FX50  4S LiPo 14.8 V 2800 mAh
 그때 PDB 와 FC 사이에 외장 파워모듈을 끼웁니다.
 ```
 
-**5 V 레일 부하 (U1 기준 5.00 A 중 3.15 A, 63%)**
+**5 V 레일 부하 (U1 기준 5.00 A 중 3.25 A, 65%)**
 
 ```
 PC1 + CAM1  (YOLO 부하)  1.50 A
 LED1 30px @ 밝기 50%     0.90 A
-U2 피크                  0.70 A
+U2 피크                  0.80 A
 U4 외                    0.05 A
 ──────────────────────────────
-합계 피크                3.15 A
+합계 피크                3.25 A
 ```
 
 ---
@@ -137,8 +137,8 @@ U4 외                    0.05 A
                      ├─[W05..08] PWM 10핀 ─→ ESC1..ESC4  (서보 3핀 하네스)
   FC1  KoA H743 ──┼─[W10] TELEM1 6핀 ─→ TM1    (57600)   ※ 미구매
                      ├─[W30] 여유 포트 ─→ FLOW1  (§4-3, 모델 확정 후)
-                     └─[W12] TELEM2 6핀 ⇄ PC1 USB-A
-                              USB-TTL, 3.3 V FTDI, 921600 bps
+                     └─[W12] TELEM2 6핀 ⇄ PC1 J8-8 / 10 / 6
+                              GPIO UART 직결, 3.3 V, 921600 bps
                               ! 5 V 선은 연결하지 말 것 (역급전)
 
   CAM1 ─[W18] CSI-2 15p FPC 200 mm ─→ PC1
@@ -147,8 +147,7 @@ U4 외                    0.05 A
    ├─[W19] J8-19  GPIO10 SPI0 MOSI ─→ U4 A1 ─[W25]→ LED1 DIN   (470 Ω 직렬)
    ├─[W20] J8-33  GPIO13 PWM1      ─→ U4 A2 ─┐
    ├─[W21] J8-31  GPIO6  DIR       ─→ U4 A3 ─┴[W26-27]→ U3 PWM / DIR
-   └─[W22-24] J8-12 / 35 / 40  I2S ─────────→ U2  (3.3 V 직결, 시프터 불필요)
-               GPIO18 BCLK / GPIO19 LRCLK / GPIO21 DIN
+   └─[W22] 3.5 mm 잭 ───────────────────────→ U2  (아날로그 라인 입력)
                                                └─[W29]→ LS1 스피커
 ```
 
@@ -168,7 +167,7 @@ U4 외                    0.05 A
 | `GPS` | 6핀 | W09 | GPS1 (UART + I2C 나침반) | SERIAL3 = UART1 |
 | `RC` | 4핀 | W11 | RX1 S.BUS | SERIAL6 = UART5. RC 포트 5 V 로 수신기 급전 |
 | `TELEM1` | 6핀 | W10 | TM1 | SERIAL1 = UART2 · 57 600 bps. **미구매** |
-| `TELEM2` | 6핀 | W12 | PC1 USB-A | SERIAL2 = UART4 · USB-TTL 3.3 V · 921 600 bps |
+| `TELEM2` | 6핀 | W12 | PC1 GPIO UART | SERIAL2 = UART4 · 3.3 V 직결 · 921 600 bps |
 | `I2C` | 4핀 | — | (예비) | 외장 나침반·I2C 센서용 |
 
 **ArduPilot 파라미터**
@@ -192,24 +191,27 @@ MOT_BAT_VOLT_MIN  13.2   4S 방전 (4 x 3.3 V)
  ──────────────────────────────────────────────────────────────
    2     —        5V IN             W15      U1 UBEC 출력
    6     —        GND               —        스타 그라운드
-  12     GPIO18   I2S BCLK      ┐
-  35     GPIO19   I2S LRCLK     ├─ W22-24    U2 MAX98357A
-  40     GPIO21   I2S DIN       ┘
+   8     GPIO14   UART TXD          W12      FC1 TELEM2 RX
+  10     GPIO15   UART RXD          W12      FC1 TELEM2 TX
   19     GPIO10   SPI0 MOSI         W19      U4 A1 → LED1 DIN
   31     GPIO6    DIR               W21      U4 A3 → U3 DIR
   33     GPIO13   PWM1              W20      U4 A2 → U3 PWM
   39     —        GND               —        스타 그라운드
  ──────────────────────────────────────────────────────────────
  CSI 포트          camera            W18      CAM1
- USB-A             MAVLink           W12      FC1 TELEM2
+ 3.5 mm 잭         아날로그 오디오     W22      U2 라인 입력
 ```
 
-> **핀 선정 이유 (rev.A에서 바뀐 부분)**
-> - `GPIO18`은 **I2S BCLK로 고정**이다. 액추에이터 PWM이나 LED에 쓸 수 없다.
-> - `GPIO12`는 GPIO18과 **같은 PWM0 채널**이라 동시에 못 쓴다.
+> **핀 선정 이유**
+> - 앰프를 I2S(MAX98357A)에서 아날로그(PAM8403)로 바꾸면서 **`GPIO18`·`GPIO19`·
+> `GPIO21`이 풀렸다.** rev.A 에 있던 "GPIO18은 I2S 고정이라 PWM 불가, GPIO12도
+> PWM0 공유라 불가" 제약은 더 이상 없다. 핀이 모자라면 여기서 가져다 쓴다.
 > - 액추에이터 → **GPIO13 (PWM1)** + **GPIO6 (DIR)**. LMB2036U는 2선 극성반전식이라
 > PWM 1핀만으로는 수축이 불가능하므로 DIR이 반드시 필요하다.
 > - LED → **GPIO10 (SPI0 MOSI)**. SPI 구동이라 root 권한도 필요 없다.
+> - MAVLink → **GPIO14/15**. 기본 `/dev/serial0`은 mini-UART 라 921 600 bps 에서
+> 바이트를 흘린다. `/boot/firmware/config.txt` 에 **`dtoverlay=disable-bt`** 를 넣어
+> PL011(`ttyAMA0`)로 넘기고, raspi-config 에서 시리얼 로그인 셸을 끈다.
 
 4-3. FLOW1 : 옵티컬 플로우 + 거리계 — **포트 미확정**
 
@@ -238,7 +240,7 @@ MOT_BAT_VOLT_MIN  13.2   4S 방전 (4 x 3.3 V)
 | W09 | GPS1 | FC1 `GPS` 6핀 | UART + I2C | 동봉 6핀 | 나침반 포함 |
 | W10 | TM1 | FC1 `TELEM1` 6핀 | UART | 6핀 | 57 600 bps. **미구매** |
 | W11 | RX1 | FC1 `RC` 4핀 | S.BUS | 동봉 4핀 | 수동 개입 경로. RC 포트 5 V 로 수신기 급전 |
-| W12 | FC1 TELEM2 | PC1 USB-A | MAVLink2 | USB-TTL 3.3 V | **5 V 선 연결 금지** |
+| W12 | FC1 TELEM2 | PC1 J8-8 / 10 / 6 | MAVLink2 | JST-GH 6핀 → 듀폰 3선 | TX↔RX 교차. **5 V 선 제거** |
 | W13 | PDB1 패드 | U1 입력 | 14.8 V | 16 AWG | |
 | W14 | PDB1 패드 | U3 Vcc | 14.8 V | 16 AWG | 액추에이터 구동 전원 |
 | W15 | U1 출력 | PC1 J8-2 / J8-6 | 5.0 V | 18 AWG | **인라인 3 A 퓨즈** |
@@ -248,7 +250,7 @@ MOT_BAT_VOLT_MIN  13.2   4S 방전 (4 x 3.3 V)
 | W19 | PC1 J8-19 | U4 A1 | SPI0 MOSI | 22 AWG | 3.3 V in → 5 V out |
 | W20 | PC1 J8-33 | U4 A2 | PWM1 | 22 AWG | 액추에이터 속도 |
 | W21 | PC1 J8-31 | U4 A3 | DIR | 22 AWG | 전개 / 수축 |
-| W22–24 | PC1 J8-12/35/40 | U2 I2S | I2S | 22 AWG ×3 | 3.3 V 직결 |
+| W22 | PC1 3.5 mm 잭 | U2 라인 입력 | 아날로그 | 3.5 mm 플러그 → 선 | 짧게. U2 옆에 100 µF + 0.1 µF |
 | W25 | U4 Y1 | LED1 DIN | 5 V data | 22 AWG | 470 Ω 직렬 |
 | W26–27 | U4 Y2, Y3 | U3 PWM, DIR | 5 V TTL | 22 AWG ×2 | |
 | W28 | U3 출력 | M5 | 스위칭 14.8 V | 18 AWG 트위스트 | 극성 반전 |
@@ -312,7 +314,8 @@ MOT_BAT_VOLT_MIN  13.2   4S 방전 (4 x 3.3 V)
 3. `PC1`은 J8-2/6 급전이라 보드 폴리퓨즈를 **우회**합니다. **인라인 3 A 퓨즈**를 다세요.
 4. 3.3 V GPIO는 WS2812B의 VIH(0.7 × VDD = **3.5 V**)와 DMD-150의 **5 V TTL** 문턱에 모두 미달합니다.
  → `U4` 74AHCT125는 W25·W26·W27에 **필수**입니다 (선택 아님).
-5. `GPIO18`은 I2S 비트클럭입니다. LED나 액추에이터 PWM에 겸용 불가. `GPIO12`도 PWM0 공유라 불가.
+5. `W12` 는 **TX↔RX 교차**입니다. FC TELEM2 의 TX 가 Pi 의 RXD(J8-10)로 갑니다.
+ 그리고 케이블의 **5 V 선을 반드시 뽑으세요.** Pi 는 `U1` 에서 급전되므로 전원이 충돌합니다.
 6. 첫 시동은 **프로펠러 제거 상태**로. DETAIL A와 회전 방향 대조 후 블레이드 체결.
 7. `M5` 스트로크 시험은 **기체 고정 후**. 120 N 반력이 고정되지 않은 기체를 움직입니다.
 8. `LED1` 밝기는 코드에서 상한을 거세요. 30 px 전체 백색은 1.8 A를 끌어 PC1이 리부팅됩니다.

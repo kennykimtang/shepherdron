@@ -123,10 +123,10 @@ C. 안내 기능 = 프로젝트의 목적입니다
 |:-:|---|---|---|
 | C1 | **WS2812B LED 스트립** | 30 LED, 5 V | 대피 방향 유도 ([#10](https://github.com/kennykimtang/shepherdron/issues/10)) |
 | C2 | **74AHCT125** | 쿼드 레벨 시프터 (DIP) | Pi의 3.3 V는 WS2812B의 VIH(3.5 V) **미달**. 없으면 LED가 간헐 오동작 |
-| C3 | **MAX98357A + 3 W 4 Ω 스피커** | I2S 앰프 모듈 | 음성 안내 ([#11](https://github.com/kennykimtang/shepherdron/issues/11)) |
-| C4 | 470 Ω 저항, 1000 µF / 1000 µF 25 V 콘덴서 | — | LED 보호·돌입전류. [WIRING.md](WIRING.md) §8 |
+| C3 | **PAM8403 (8403AMP) + 3 W 4 Ω 스피커** | 아날로그 class-D · 볼륨 포트 | 음성 안내 ([#11](https://github.com/kennykimtang/shepherdron/issues/11)). Pi 3.5 mm 잭에서 받습니다. 플러그→선 케이블 함께 |
+| C4 | 470 Ω 저항, 1000 µF ×2, 100 µF, 0.1 µF | — | LED 보호·돌입전류·앰프 디커플링. [WIRING.md](WIRING.md) §8 |
 | C6 | **Camera Module 3 Wide** | 라즈베리파이 전용 | 비전 입력. falconshop 취급 품목이 아니므로 별도 구매 |
-| C7 | **USB-TTL 시리얼 케이블** | **3.3 V 로직** | Pi ↔ FC MAVLink. 5 V 로직 제품은 부적합 |
+| C7 | **픽스호크 ↔ Pi 연결 케이블** | JST-GH 1.25 mm 6핀 → 듀폰 | Pi ↔ FC MAVLink. GPIO UART 직결이라 USB-TTL 불필요. **5 V 선 제거** |
 | C5 | **페이로드 구동부** | **기구 방식 결정 후** ([#9](https://github.com/kennykimtang/shepherdron/issues/9)) | 윈치 서보 + 텔레스코픽/Kresling 재료, 또는 리니어 액추에이터 |
 
 ---

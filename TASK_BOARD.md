@@ -1,8 +1,8 @@
 Shepherdron 작업 보드
 
-갱신 : 2026-10-16
+갱신 : 2026-11-06
 
-이 파일은 큰 그림입니다. 실제 작업 추적은 GitHub에서 합니다.
+이 파일은 큰 그림과 체크리스트입니다. 개별 작업 추적은 GitHub에서 합니다.
 
 | 용도 | 위치 |
 |---|---|
@@ -12,97 +12,174 @@ Shepherdron 작업 보드
 
 ---
 
-확정된 전제
+0. 먼저 이것부터 정합니다 : 시연 단계
 
-| 항목 | 내용 | 영향 |
-|---|---|---|
-| **시연 장소** | 실내 계단식 강당, 천장 4.22~4.43 m | GPS 불가 → 옵티컬 플로우 필요. 고도 상한 3.4 m |
-| **동력계** | 4S 14.8 V + AirGear 355 (AIR2213 1000KV + MF9545) | T/W 3.37, 체공 11.5분 |
-| **비행제어기** | KoA H743 | 핀맵 제조사 매뉴얼 확인 필요 |
-| **연산 위치** | 노트북이 YOLO, 기체가 판단·구동 | 링크는 관측만 전달 |
-| **카메라 각도** | 45도 하향 | 수직은 사람이 6.5 px라 검출 불가 |
+**나머지 목록의 절반이 이 결정에 달려 있습니다.** [INDOOR.md](INDOOR.md) 5절의 세 단계 중
+어디까지 할지 정하면, 사야 할 것과 안 사도 되는 것이 갈립니다.
 
-상세 : [INDOOR.md](INDOOR.md), [HARDWARE_SPEC.md](HARDWARE_SPEC.md) 0절, [ARCHITECTURE.md](ARCHITECTURE.md)
-
----
-
-현재 상태
-
-| 파트 | 상태 | 다음 할 일 |
-|---|---|---|
-| 비전 | 코어 완료 | 현장 임계치 튜닝 [#1](https://github.com/kennykimtang/shepherdron/issues/1), CSI 스트리밍 [#2](https://github.com/kennykimtang/shepherdron/issues/2) |
-| 항법 | 코어 완료 (실내 포함) | 옵티컬 플로우 [#23](https://github.com/kennykimtang/shepherdron/issues/23), SITL [#4](https://github.com/kennykimtang/shepherdron/issues/4), 실기 통신 [#5](https://github.com/kennykimtang/shepherdron/issues/5) |
-| 하드웨어 | 동력계 확보, 조립 전 | 전원 배선 [#7](https://github.com/kennykimtang/shepherdron/issues/7), **기구 방식 결정 [#9](https://github.com/kennykimtang/shepherdron/issues/9)** |
-| 문서 | 설계 문서 완료 | 발표 자료 [#14](https://github.com/kennykimtang/shepherdron/issues/14) |
-
-테스트 298건이 하드웨어 없이 돌아갑니다. `pytest tests/`
-
----
-
-완료
-
-비전 (Phase 1)
-- YOLOv8n + ByteTrack 검출·추적, 프레임 간 동일 인물 ID 유지
-- 지상 평면 호모그래피 기반 persons/m2 판정
-- 경보 히스테리시스 : 단발 오검출이 비행 명령이 되지 않도록
-- 카메라 45도 기울임, 검출 범위 밖 구역은 UNKNOWN 처리
-
-항법 (Phase 2)
-- 기체 기준 오프셋 ↔ 위경도 변환, 반경·고도 제한
-- 임무 상태기계 IDLE → NAVIGATING → HOVERING → RETRACTING → RETURNING
-- 조종사 수동 전환 시 STANDBY : 조종권을 되찾아가지 않음
-- **실내 프로파일** : GPS 없이 기수 기준 상대 이동으로 비행
-- 설정 정합성 점검, 세션 로그 (JSONL)
-
-통합 (Phase 4)
-- 지상/기체 역할 분리, 링크는 관측만 전달
-- 링크 끊겨도 기체 단독으로 안전 복귀 (실측 40초 유지 후 타임아웃 RTL)
-- 페이로드 추상화 : 기구 방식과 무관하게 전개/수축 제어
-
-문서
-- 부품 검증 9건 교정, 질량·추력·전력 예산
-- 결선 명세, 현장 운용 절차, 실내 제약, 구매 목록
-
----
-
-진행 중 / 대기
-
-| # | 작업 | 파트 | 우선순위 |
+| 단계 | 내용 | 추가로 필요한 것 | 남은 기간 |
 |---|---|---|---|
-| [#23](https://github.com/kennykimtang/shepherdron/issues/23) | **옵티컬 플로우 + 거리계** (실내 필수) | 하드웨어·항법 | 높음 |
-| [#9](https://github.com/kennykimtang/shepherdron/issues/9) | **기구 방식 결정 + 실내용 길이** | 하드웨어 | 높음 |
-| [#1](https://github.com/kennykimtang/shepherdron/issues/1) | 현장 임계치 튜닝 (앉은 사람 대응 포함) | 비전 | 높음 |
-| [#2](https://github.com/kennykimtang/shepherdron/issues/2) | CSI 카메라 MJPEG 스트리밍 | 비전 | 높음 |
-| [#4](https://github.com/kennykimtang/shepherdron/issues/4) | SITL 완주 확인 | 항법 | 높음 |
-| [#5](https://github.com/kennykimtang/shepherdron/issues/5) | KoA H743 시리얼 통신 | 항법 | 높음 |
-| [#7](https://github.com/kennykimtang/shepherdron/issues/7) | 4S 전원 분배 구축 | 하드웨어 | 높음 |
-| [#12](https://github.com/kennykimtang/shepherdron/issues/12) | 배터리 추가 구매 | 하드웨어 | 높음 |
-| [#8](https://github.com/kennykimtang/shepherdron/issues/8) | 페이로드 구동부 제어 | 하드웨어 | 보통 |
-| [#10](https://github.com/kennykimtang/shepherdron/issues/10) | WS2812B LED 패턴 | 하드웨어 | 보통 |
-| [#11](https://github.com/kennykimtang/shepherdron/issues/11) | MAX98357A 음성 안내 | 하드웨어 | 보통 |
-| [#3](https://github.com/kennykimtang/shepherdron/issues/3) | Pi NCNN FPS 실측 (폴백용) | 비전 | 낮음 |
-| [#13](https://github.com/kennykimtang/shepherdron/issues/13) | 페이로드 연동, systemd | 인프라 | 보통 |
-| [#14](https://github.com/kennykimtang/shepherdron/issues/14) | 발표 자료, 시연 영상 | 문서 | 보통 |
+| **1** | 비전만. 기체는 거치대에서 구조물 전개 | 없음 | 충분 |
+| **2** | 조종사 수동 비행 + 자동 전개 | 프롭가드 · 조종기 배터리 | 빠듯 |
+| **3** | 자율 이동 | **옵티컬 플로우 · GPS/나침반 모듈 · 튜닝 비행 수 회** | **어려움** |
+
+**권장 : 1단계를 확정하고, 2단계를 여유가 되면 붙입니다.**
+
+3단계는 옵티컬 플로우 센서가 아직 발주되지 않았고, 도착해도 EKF 튜닝에 실기
+비행이 여러 번 필요합니다. 발표까지 남은 기간에 사람이 있는 실내에서 1.5 kg
+기체를 자율비행시키는 건 일정보다 안전 문제가 먼저입니다.
+
+**1단계만으로 비전 → 판단 → 전개가 전부 보입니다.** 프로젝트의 핵심은 거기 있습니다.
 
 ---
 
-팀 결정이 필요한 사항
+1. 사야 할 것
 
-| # | 내용 | 막고 있는 것 |
-|---|---|---|
-| 1 | **기구 방식** : 텔레스코픽 마스트 vs Kresling, 윈치 구동 방식 | Phase 3 전체 |
-| 2 | **구조물 길이** : 실내 천장 4.22 m라 600 mm는 사람 머리에 닿음. 300 mm 권장 | 기구 설계 |
-| 3 | **전개 방향** : 아래면 중력이 펴주고, 옆·위면 스프링 필요 | 기구 설계 |
-| 4 | **시연 단계** : 비전만 / 수동비행+자동전개 / 자율이동 중 어디까지 | 시연 준비 |
+1-A. 이게 없으면 아무것도 못 합니다
 
-4번은 [INDOOR.md](INDOOR.md) 5절 참조. 사람이 있는 실내에서 1.5 kg 기체를
-자율비행시키는 것은 위험하므로 단계를 나눌 것을 권합니다.
+- [ ] **픽스호크 ↔ 라즈베리파이 연결 케이블** — JST-GH 1.25 mm 6핀 → 듀폰
+      - KoA FC 전용품을 권장. 표준품을 살 경우 **1번 핀이 5 V 인지 멀티미터로 확인**
+      - **5 V 선은 반드시 제거**합니다. Pi 는 UBEC 으로 이미 급전되므로 전원이 충돌합니다
+      - 3선(TX · RX · GND)이면 충분합니다
+- [ ] **microSD 카드** 32 GB 이상 A1/A2 — 저가 카드는 비행 중 파일시스템이 깨집니다
+- [ ] **Camera Module 3 Wide** — 비전 입력
+- [ ] **CSI 리본 케이블 300~500 mm** — 동봉품은 200 mm 라 기체 아래로 못 내립니다. 15핀 1 mm
+- [ ] **조종기 배터리 18650 ×2** — [주의사항](#조종기-배터리)
+- [ ] **4S 2800 mAh 배터리** 상태 확인. 1개뿐이면 1개 추가
+      (체공 11.5분 · 충전 1시간. 리허설과 시연을 같은 날 하면 1개로는 모자랍니다)
+
+1-B. 안내 기능 : 프로젝트의 목적입니다
+
+- [ ] **WS2812B 30 LED 스트립 ×2** — 1개는 예비. 납땜하다 첫 LED 를 태우면 뒤가 전부 안 켜집니다
+- [ ] **74AHCT125 ×2** (DIP) — Pi 의 3.3 V 는 WS2812B 문턱 3.5 V 미달. **선택이 아닙니다**
+- [ ] **PAM8403 (8403AMP) 앰프** — 볼륨 포트 달린 것으로
+- [ ] **3 W 4 Ω 스피커**
+- [ ] **3.5 mm 스테레오 플러그 → 선** (AUX 케이블 잘라 쓰면 됩니다)
+- [ ] 470 Ω 저항 · 1000 µF 전해 ×2 · 100 µF · 0.1 µF
+
+> **MAX98357A 는 안 사도 됩니다.** 그건 I2S 디지털 앰프라 Pi 의 GPIO 에서 받고,
+> PAM8403 은 아날로그라 Pi 4 의 3.5 mm 잭에서 받습니다. 바꾸면 **GPIO18/19/21 이
+> 풀려서** 구동계 PWM 핀 제약도 같이 사라집니다. LM386 은 5 V 에서 0.2 W 라
+> 행사장에서 안 들립니다. 상세는 [WIRING.md](WIRING.md) 1절.
+
+1-C. 2단계(수동 비행)를 할 경우
+
+- [ ] **프로펠러 가드** F450 450 mm 급 — 실내에서 사람 근처를 납니다. **선택이 아닙니다**
+- [ ] **LiPo 세이프 백** — 실내 충전·보관. 학교 안전 규정상 요구될 수 있습니다
+
+1-D. 3단계(자율)를 할 경우에만
+
+- [ ] **옵티컬 플로우 + 하향 거리계** (예: Matek 3901-L0X) — 실내는 GPS 가 안 잡힙니다
+- [ ] **GPS + 나침반 일체형** — **KoA FC 에 나침반이 없습니다.** 실내에서도 기수 방향에 필요
+
+1-E. 소모품
+
+- [ ] 3M VHB 양면테이프 — **단 FC 는 양면테이프 금지. 진동 댐퍼를 씁니다**
+      (폼테이프에 붙이면 진동이 IMU 로 올라와 고도 유지가 흔들립니다)
+- [ ] 인라인 3 A 퓨즈 — Pi 를 J8-2/6 으로 먹이면 보드 폴리퓨즈를 우회합니다. 빼먹지 마세요
+- [ ] 18 AWG · 22 AWG 전선 소량, 열수축
+
+<a name="조종기-배터리"></a>
+**조종기 배터리 주의**
+
+RadioMaster Pocket 은 18650 **2개를 직렬**로 쓰고 밸런스 선 없이 USB-C 로 통째로
+충전합니다.
+
+- **같은 모델 · 같은 용량 2개.** 2000 과 2600 을 섞으면 작은 쪽이 과방전과 과충전을
+  번갈아 맞습니다
+- **보호회로 없는(unprotected)** 플랫탑 또는 버튼탑. 보호회로 달린 셀은 68 mm 를
+  넘어 베이에 안 들어갑니다
 
 ---
 
-작업 규칙
+2. 손으로 할 것
 
-1. 시작 전 : Issue를 자신에게 할당하고 `feat/<파트>-<작업>` 브랜치를 만듭니다.
-2. PR : 본문에 `Resolves #<번호>`를 적으면 머지 시 Issue가 자동으로 닫힙니다.
-3. 테스트 : 푸시 전 `pytest tests/` 통과 확인. CI가 모든 PR에서 다시 돌립니다.
-4. main 직접 푸시 금지 : 반드시 PR로 올립니다.
+- [ ] **라즈베리파이 전원 납땜** — UBEC 5 V/5 A → Pi J8-2/6, 인라인 3 A 퓨즈
+- [ ] **FC ↔ Pi 시리얼 결선** — FC TELEM2 TX → Pi 물리 10번(GPIO15) ·
+      FC RX → Pi 물리 8번(GPIO14) · GND → 물리 6번. **교차 주의**
+- [ ] **카메라 45° 하향 마운트 출력** — 수직 하향은 사람이 6.5 px 라 검출 불가
+- [ ] **FC 진동 댐퍼 마운트**
+- [ ] **구조물 : 도화지 시제품 재제작** — 헤비 트레싱지는 접힌 선이 찢어졌습니다.
+      접합 위치를 바꿔 보는 중
+- [ ] **리브 핀 결합 + 전개 동작 확인** — 출력 방향을 바꿔 핀 구멍은 깔끔해졌습니다
+- [ ] **구동계 제작** — [기구 방식 결정](#팀-결정) 후
+- [ ] **LED 스트립 → 구조물 부착 + 74AHCT125 결선**
+- [ ] **앰프 + 스피커 결선**
+- [ ] **프로펠러 제거 상태로 첫 시동** — DETAIL A 와 회전 방향 대조 후 블레이드 체결
+
+---
+
+3. 소프트웨어
+
+- [ ] **Pi UART 설정** — `/boot/firmware/config.txt` 에 `dtoverlay=disable-bt`,
+      raspi-config 에서 로그인 셸 끄고 하드웨어 시리얼 켜기.
+      **안 하면 mini-UART 에 물려 921600 bps 에서 바이트를 흘립니다**
+- [ ] [#5](https://github.com/kennykimtang/shepherdron/issues/5) **KoA H743 실기 MAVLink 통신 확인**
+- [ ] [#2](https://github.com/kennykimtang/shepherdron/issues/2) **CSI 카메라 MJPEG 스트리밍**
+- [ ] [#8](https://github.com/kennykimtang/shepherdron/issues/8) **페이로드 구동부 드라이버** — 기구 방식 결정 후
+- [ ] [#10](https://github.com/kennykimtang/shepherdron/issues/10) **LED 패턴** — 밝기 상한 필수.
+      30 px 전체 백색은 1.8 A 라 Pi 가 리부팅됩니다
+- [ ] [#11](https://github.com/kennykimtang/shepherdron/issues/11) **음성 안내** — I2S 가 아니라 아날로그 출력으로
+- [ ] [#1](https://github.com/kennykimtang/shepherdron/issues/1) **현장 임계치 튜닝**
+- [ ] **파이썬판에 웹판 변경 반영** — 머리 검출 · 축척 0.23 m · 목표 좌표 필터.
+      지금은 같은 영상에서 두 결과가 다릅니다 ([docs/README.md](docs/README.md))
+- [ ] [#4](https://github.com/kennykimtang/shepherdron/issues/4) SITL 완주 — 2·3단계를 할 경우
+- [ ] [#14](https://github.com/kennykimtang/shepherdron/issues/14) 발표 자료 · 시연 영상
+
+---
+
+<a name="팀-결정"></a>
+4. 팀이 정해야 할 것
+
+| # | 내용 | 막고 있는 것 | 기한 |
+|:-:|---|---|---|
+| 1 | **시연 단계** (0절) | 구매 목록 절반 | **지금** |
+| 2 | **기구 방식** : 텔레스코픽 마스트 vs Kresling | 구동계 제작 전체 | **지금** |
+| 3 | **구조물 길이** : 천장 4.22 m 라 600 mm 는 사람 머리에 닿음. 실내용 300 mm 권장 | 기구 설계 | 2번과 함께 |
+| 4 | **전개 방향** : 아래면 중력이 펴주고, 옆·위면 스프링 필요 | 기구 설계 | 2번과 함께 |
+
+2번은 [PAYLOAD.md](PAYLOAD.md) 3절에 비교표가 있습니다. **윈치 서보로 가면
+구동계가 45 g 으로 끝나고 74AHCT125 채널도 하나 아낍니다.**
+
+---
+
+5. 확보된 것
+
+사진으로 확인
+
+- F450 프레임 · 암 4 · 랜딩 스키드
+- AIR2213 모터 4 + AIR 20A ESC 4, PDB 납땜 완료
+- KoA FC H743
+- Raspberry Pi 4 Model B
+- RadioMaster Pocket (TX1) · R86C V2 수신기
+- UBEC
+
+상태 확인 필요
+
+- [ ] 4S 2800 mAh 배터리 : 몇 개인가
+- [ ] microSD : 꽂혀 있는가, 용량은
+- [ ] F450 하판이 PDB 겸용인가, 패드가 충분한가
+- [ ] 안전 스위치 · 부저가 H743 패키지에 포함돼 있는가 (없으면 `BRD_SAFETYENABLE=0`)
+- [ ] 진동 댐퍼가 키트에 포함돼 있는가
+
+---
+
+6. 소프트웨어 완료 상태
+
+테스트 369건이 하드웨어 없이 돌아갑니다. `pytest tests/`
+
+| 파트 | 상태 |
+|---|---|
+| 비전 | 코어 완료. 웹 시연판 동작 중 |
+| 항법 | 코어 완료 (실내 프로파일 포함). 실기 검증 남음 |
+| 페이로드 | 추상화 완료. 실제 드라이버는 기구 방식 결정 후 |
+| 통합 | 지상/기체 분리, 링크 끊김 시 단독 복귀 (실측 40초) |
+
+---
+
+7. 작업 규칙
+
+1. 시작 전 : Issue 를 자신에게 할당하고 `feat/<파트>-<작업>` 브랜치를 만듭니다.
+2. PR : 본문에 `Resolves #<번호>` 를 적으면 머지 시 Issue 가 자동으로 닫힙니다.
+3. 테스트 : 푸시 전 `pytest tests/` 통과 확인. CI 가 모든 PR 에서 다시 돌립니다.
+4. main 직접 푸시 금지 : 반드시 PR 로 올립니다.
