@@ -33,6 +33,7 @@ const S = {
   heat: true, boxes: true, roi: null, areaM2: null, tiles: 1,
   hfov: 70, sigma: 0.75, tiers: V.DEFAULT_TIERS,
   hot: new V.HotspotFilter(), hotPx: new V.HotspotFilter(), lastBearing: null,
+  ground: new V.GroundPlane(), mem: new V.BearingMemory(), calib: null,
   sync: true, detReady: false,
   level: new V.LevelFilter(8),
   alert: new V.AlertDebouncer(15, 0.6, 0.25, 4),
@@ -142,7 +143,8 @@ function fail(text) {
 /* 실행 중에만 보이는 조작 */
 function showRunControls(on) {
   for (const id of ["btnSource", "btnDispatch", "vr1", "btnHeat", "btnBox",
-                    "btnRot", "btnCamFull", "btnSync", "areaIn", "tileSel", "everySel"]) {
+                    "btnRot", "btnCamFull", "btnSync", "areaIn", "btnGround",
+                    "gW", "gH", "tileSel", "everySel"]) {
     $(id).hidden = !on;
   }
 }
@@ -244,13 +246,18 @@ function analyse(W, H, now) {
   // 촬영 구역의 실제 면적을 넣어 두면 픽셀당 미터를 바로 역산한다. 머리 박스
   // 크기로 추정하는 것보다 정확해서, 값이 있으면 그쪽을 쓴다.
   const mPerPx = S.areaM2 ? Math.sqrt(S.areaM2 / V.polygonAreaPx(S.roi, W, H)) : null;
-  const field = V.densityField(people, S.sigma, mPerPx);
-  const roi = V.analyzeRoi(field, S.roi, W, H, { tiers: S.tiers, areaM2: S.areaM2 });
+  // 지면 보정이 있으면 그걸 가장 먼저 쓴다. 비스듬히 내려다본 화면에서
+  // 축척 하나로 퉁치면 가까운 쪽이 실제보다 한산하게 나온다.
+  const gp = S.ground.ok ? S.ground : null;
+  const field = V.densityField(people, S.sigma, mPerPx, gp);
+  const roi = V.analyzeRoi(field, S.roi, W, H,
+                           { tiers: S.tiers, areaM2: S.areaM2, ground: gp });
   roi.level = S.level.update(roi.level);
   // 화면 표시도 같은 이유로 걸러 준다. 단위가 픽셀이라 문턱을 화면폭에 맞춘다.
   S.hotPx.deadbandM = W * 0.012; S.hotPx.jumpM = W * 0.06;
   roi.peakPoint = S.hotPx.update(roi.peakPoint, now);
-  const pic = V.buildPicture(people, W, S.sigma, S.hfov, mPerPx, S.lastBearing);
+  const pic = V.buildPicture(people, W, S.sigma, S.hfov,
+    { mPerPx, prevBearing: S.lastBearing, ground: gp, memory: S.mem, t: now });
   S.lastBearing = pic.evacuation ? pic.evacuation.bearing : null;
   // 목표는 걸러서 쓴다. 검출이 한둘 바뀔 때마다 그대로 따라가면 기체가 떤다.
   pic.hotspot = S.hot.update(pic.hotspot, now);
@@ -274,11 +281,68 @@ function analyse(W, H, now) {
   }
   S.link?.report?.({ n: roi.count, peak: +roi.peakDensity.toFixed(2),
                      lv: V.levelTag(roi.level), msn: V.MISSION[S.mission.state] });
-  S.mPerPx = mPerPx;
+  S.mPerPx = mPerPx; S.gp = gp;
   S.view = { roi, pic, field, people };
 }
 
 const push = (a, v) => { a.push(v); if (a.length > 240) a.shift(); };
+
+/* ── 지면 보정 ──
+ * 바닥 직사각형의 네 모서리를 찍고 실제 치수를 넣으면 원근이 풀린다.
+ * 찍는 순서는 좌상 → 우상 → 우하 → 좌하. 파이썬판 calibrate_ground.py 와 같다. */
+const CALIB_LABEL = ["좌상", "우상", "우하", "좌하"];
+
+function drawCalib(ctx, W) {
+  const pts = S.calib ? S.calib.pts : (S.ground.ok ? S.ground.quad : null);
+  if (!pts || !pts.length) return;
+  const live = !!S.calib;
+  const r = Math.max(4, W / 180), lw = Math.max(2, W / 500);
+  ctx.save();
+  ctx.strokeStyle = live ? T.accent : T.ink3;
+  ctx.lineWidth = lw;
+  ctx.setLineDash(live ? [lw * 3, lw * 2] : []);
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  if (pts.length === 4) ctx.closePath();
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = live ? T.accent : T.ink3;
+  pts.forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); });
+  ctx.restore();
+}
+
+function calibClick(e) {
+  if (!S.calib) return;
+  const cv = $("view"), b = cv.getBoundingClientRect();
+  if (!b.width || !b.height) return;
+  S.calib.pts.push([(e.clientX - b.left) * (cv.width / b.width),
+                    (e.clientY - b.top) * (cv.height / b.height)]);
+  if (S.calib.pts.length < 4) { calibHint(); return; }
+  const w = parseFloat($("gW").value), h = parseFloat($("gH").value);
+  if (!(w > 0) || !(h > 0)) {
+    addLog("가로와 세로를 미터로 넣어 주세요", T.warn || T.accent);
+    S.calib.pts.pop(); calibHint(); return;
+  }
+  const gp = V.GroundPlane.fromQuad(S.calib.pts, w, h);
+  if (!gp.ok) {
+    addLog("네 점이 사각형을 이루지 않습니다. 다시 찍어 주세요", T.warn || T.accent);
+    S.calib.pts = []; calibHint(); return;
+  }
+  gp.quad = S.calib.pts;
+  S.ground = gp; S.calib = null; S.mem.reset();
+  $("btnGround").setAttribute("aria-pressed", "false");
+  addLog(`지면 보정 완료 · ${w}×${h} m = ${(w * h).toFixed(0)} ㎡`, T.accent);
+  calibHint();
+}
+
+function calibHint() {
+  const el = $("calibHint");
+  if (!el) return;
+  if (S.calib) {
+    el.hidden = false;
+    el.textContent = `바닥 사각형 ${CALIB_LABEL[S.calib.pts.length]} 모서리를 클릭하세요`;
+  } else el.hidden = true;
+}
 
 /* ── 영상 방향 ──
  * 폰 카메라는 센서 방향 그대로 보내고, 그 방향 정보는 WebRTC 를 타고 넘어오지
@@ -341,7 +405,7 @@ function drawView(v, W, H, people, roi) {
 
   if (S.heat && people.length) {
     const ref = S.tiers[S.tiers.length - 1];
-    const { heat, fw, fh } = V.densityRaster(people, S.sigma, W, H, 160, S.mPerPx);
+    const { heat, fw, fh } = V.densityRaster(people, S.sigma, W, H, 160, S.mPerPx, S.gp);
     if (heatCv.width !== fw || heatCv.height !== fh) { heatCv.width = fw; heatCv.height = fh; }
     const hx = heatCv.getContext("2d"), img = hx.createImageData(fw, fh);
     for (let i = 0; i < heat.length; i++) {
@@ -356,6 +420,7 @@ function drawView(v, W, H, people, roi) {
     ctx.drawImage(heatCv, 0, 0, W, H);
   }
 
+  drawCalib(ctx, W);
   if (!roi) { $("camInfo").textContent = `${W}×${H}`; return; }
   if (roi.polygon?.length >= 3 && S.roi) {
     ctx.strokeStyle = T.ink3; ctx.lineWidth = Math.max(2, W / 640);
@@ -660,6 +725,15 @@ function startPhoneLink() {
   });
 }
 
+$("view").addEventListener("click", calibClick);
+$("btnGround").onclick = () => {
+  if (S.calib) { S.calib = null; }
+  else if (S.ground.ok) { S.ground = new V.GroundPlane(); S.mem.reset(); addLog("지면 보정 해제", T.ink3); }
+  else S.calib = { pts: [] };
+  $("btnGround").setAttribute("aria-pressed", String(!!S.calib || S.ground.ok));
+  calibHint();
+};
+
 $("btnPhone").onclick = startPhoneLink;
 $("btnStart").onclick = startCam;
 function syncRotBtn() {
@@ -724,6 +798,7 @@ addEventListener("keydown", (e) => {
   else if (k === "f") $("btnFull").click();
   else if (k === "r" && !$("btnRot").hidden) $("btnRot").click();
   else if (k === "c" && !$("btnCamFull").hidden) $("btnCamFull").click();
+  else if (k === "g" && !$("btnGround").hidden) $("btnGround").click();
   else if (k === "t" && !$("tileSel").hidden) {           // 분할 단계를 돌려 가며 본다
     const s = $("tileSel");
     s.selectedIndex = (s.selectedIndex + 1) % s.options.length;

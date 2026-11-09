@@ -59,12 +59,15 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;letter
 .tb.act{background:var(--accent);color:#fff;font-weight:500}
 .tb.act:hover{background:var(--accent);filter:brightness(1.07)}
 .tb:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-select,#areaIn{background:var(--card);border:1px solid var(--edge);color:var(--ink2);
+select,#areaIn,#gW,#gH{background:var(--card);border:1px solid var(--edge);color:var(--ink2);
   border-radius:6px;padding:5px 8px;font:inherit;font-size:12.5px}
-#areaIn{width:96px}
+#areaIn{width:96px}#gW,#gH{width:76px}
+#calibHint{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:4;
+  background:rgba(0,0,0,.76);color:#fff;padding:6px 12px;border-radius:6px;
+  font-size:13px;pointer-events:none}
 .est{font-size:10px;letter-spacing:.04em;color:var(--ink3);border:1px solid var(--edge);
   border-radius:3px;padding:0 3px;vertical-align:1px}
-#areaIn::placeholder{color:var(--ink3)}
+#areaIn::placeholder,#gW::placeholder,#gH::placeholder{color:var(--ink3)}
 #clock{font-size:13px;color:var(--ink3);white-space:nowrap}
 .vr{width:1px;height:16px;background:var(--edge);margin:0 3px}
 
@@ -237,6 +240,12 @@ select,#areaIn{background:var(--card);border:1px solid var(--edge);color:var(--i
       <button class="tb" id="btnFull" type="button" title="f">창 전체화면</button>
       <input id="areaIn" type="number" min="1" step="1" placeholder="촬영 면적 ㎡"
              title="찍고 있는 구역의 실제 넓이. 넣으면 밀도가 정확해진다" hidden>
+      <button class="tb" id="btnGround" type="button" aria-pressed="false" hidden
+              title="g — 바닥 사각형의 네 모서리를 찍어 원근을 보정한다. 비스듬히 보면 가까운 쪽이 한산하게 나오는데 그게 없어진다">지면 보정</button>
+      <input id="gW" type="number" min="0.5" step="0.5" placeholder="가로 m"
+             title="보정 사각형의 실제 가로 길이" hidden>
+      <input id="gH" type="number" min="0.5" step="0.5" placeholder="세로 m"
+             title="보정 사각형의 실제 세로 길이" hidden>
       <select id="tileSel" title="t — 화면 분할 (멀리 있는 사람까지 보려면 올린다)" hidden>
         <option value="1" selected>분할 없음</option>
         <option value="2">2×2 분할</option>
@@ -261,6 +270,7 @@ select,#areaIn{background:var(--card);border:1px solid var(--edge);color:var(--i
         <div id="stage">
           <video id="video" playsinline muted></video>
           <canvas id="view"></canvas>
+          <div id="calibHint" hidden></div>
 
           <div class="ov" id="start">
             <div class="box">
