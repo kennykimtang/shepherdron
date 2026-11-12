@@ -132,7 +132,7 @@ T/W 2.3 이라 이상 시 가속이 빠릅니다. 단계를 나눠 준비하세�
 
 ```bash
 # 기체 — 실내 프로파일
-python shepherdron_pi.py --fc /dev/ttyUSB0 --ground <노트북-IP> \
+python shepherdron_pi.py --fc /dev/ttyAMA0 --ground <노트북-IP> \
        --indoor --ceiling 4.22 --altitude 2.5
 ```
 

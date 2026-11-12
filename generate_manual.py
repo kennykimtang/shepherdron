@@ -28,6 +28,9 @@ for _f in ("Pretendard-Regular.otf", "Pretendard-Medium.otf",
         fm.fontManager.addfont(str(_p))
 plt.rcParams["font.family"] = "Pretendard"
 plt.rcParams["axes.unicode_minus"] = False
+plt.rcParams["svg.fonttype"] = "path"   # SVG 안에서 글자를 외곽선으로. 폰트 없는 PC 대응
+
+DPI = 300            # 출력 해상도. 150 이면 절반 크기가 된다
 
 PAPER = "#FBFAF7"
 INK, GREY, RULE = "#141C26", "#6E7D8C", "#C3CCD6"
@@ -40,8 +43,16 @@ WARN = "#B01020"
 
 
 # ───────────────────────── 시트 ─────────────────────────
+def save(fig, stem):
+    """PNG(래스터) 와 SVG(벡터) 를 같은 이름으로 저장한다."""
+    for ext in ("png", "svg"):
+        fig.savefig(f"{stem}.{ext}", facecolor=PAPER, dpi=DPI,
+                    bbox_inches="tight", pad_inches=0.12)
+    print(f"{stem}.png  +  {stem}.svg")
+
+
 def new_sheet(w, h, title, subtitle, corner):
-    fig, ax = plt.subplots(figsize=(w/100, h/100), dpi=150)
+    fig, ax = plt.subplots(figsize=(w/100, h/100), dpi=DPI)
     ax.set_facecolor(PAPER); fig.patch.set_facecolor(PAPER)
     ax.set_xlim(0, w); ax.set_ylim(0, h); ax.axis("off")
     ax.add_patch(patches.Rectangle((22, 22), w-44, h-44, fill=False, ec=INK, lw=2.6, zorder=2))
@@ -692,10 +703,8 @@ def sheet1():
             va="center", zorder=6)
     ax.text(w - gx, ly, "부품 번호(A1 등)는 2~4장의 배선도에서 그대로 쓴다",
             fontsize=10, color=GREY, ha="right", va="center", zorder=6)
-    fig.savefig("manual_1_parts.png", facecolor=PAPER,
-                bbox_inches="tight", pad_inches=0.12)
+    save(fig, "manual_1_parts")
     plt.close(fig)
-    print("manual_1_parts.png")
 
 
 def table(ax, x, y, w, head, rows, widths, fs=9.4, rh=30):
@@ -722,6 +731,168 @@ def table(ax, x, y, w, head, rows, widths, fs=9.4, rh=30):
         ax.plot([x, x+w], [ry]*2, color="#E1E7ED", lw=1.0, zorder=6)
     ax.add_patch(patches.Rectangle((x, y), w, len(rows)*rh + rh, fill=False,
                  ec=RULE, lw=1.4, zorder=7))
+
+
+def power_panel(ax, GX, by, GW, bh=420):
+    """전자부 전원 계통. 설명서 2장과 슬라이드가 같이 쓴다."""
+    panel(ax, GX, by, GW, bh, 2,
+          "전자부 전원 : 전원 분배 → FC / UBEC → Raspberry Pi", accent=GRN)
+
+    BUS_R, BUS_B = by + 48, by + 24          # 패널 아래쪽 +/- 간선
+
+    qx, qy = GX + 60, by + 130
+    dr_pdb(ax, qx, qy, s=0.82)
+    ax.text(qx + 61, qy - 20, "전원 분배 (패널 1)", fontsize=9.8,
+            color=GREY, ha="center", zorder=16)
+    # 분배판 → 간선
+    cable(ax, [(qx + 123, qy + 43), (qx + 170, qy + 43),
+               (qx + 170, BUS_R), (GW + GX - 120, BUS_R)], RED, lw=4.4)
+    cable(ax, [(qx + 123, qy + 18), (qx + 148, qy + 18),
+               (qx + 148, BUS_B), (GW + GX - 120, BUS_B)], BLK, lw=4.4)
+    ax.text(GX + 36, BUS_R, "+", fontsize=15, fontweight="bold", color=RED,
+            ha="center", va="center", zorder=16)
+    ax.text(GX + 36, BUS_B, "-", fontsize=17, fontweight="bold", color=INK,
+            ha="center", va="center", zorder=16)
+
+    # ── KoA FC ──
+    fx, fy = GX + 420, by + 170
+    ports = dr_fc(ax, fx, fy, s=0.60, detail=False, front_labels=False)
+    ax.text(fx + 90, fy + 126 + 46, "KoA FC H743", fontsize=11.0,
+            fontweight="bold", color=INK, ha="center", zorder=17)
+    pwx = ports["POWER"][0]
+    cable(ax, [(pwx + 7, BUS_R), (pwx + 7, ports["POWER"][1])], RED, lw=4.2)
+    cable(ax, [(pwx - 7, BUS_B), (pwx - 7, ports["POWER"][1])], BLK, lw=4.2)
+    ax.text(pwx - 34, ports["POWER"][1] - 16, "POWER", fontsize=9.6,
+            fontweight="bold", color=RED, ha="right", va="center", zorder=17)
+    ax.text(pwx - 34, ports["POWER"][1] - 36, "6핀 · Vbat/GND", fontsize=8.6,
+            color=GREY, ha="right", va="center", zorder=17)
+    callout(ax, pwx + 42, (BUS_R + ports["POWER"][1]) / 2, 5, col=RED)
+
+    # ── UBEC ──
+    ux, uy = GX + 880, by + 190
+    uin, uout = dr_ubec(ax, ux, uy, s=1.0, labels=False)
+    ax.text(ux + 45, uy + 58, "UBEC 5V 5A", fontsize=10.8,
+            fontweight="bold", color=INK, ha="center", zorder=17)
+    cable(ax, [(ux - 62, BUS_R), (ux - 62, uin[1] + 7), (uin[0], uin[1] + 7)],
+          RED, lw=4.2)
+    cable(ax, [(ux - 90, BUS_B), (ux - 90, uin[1] - 7), (uin[0], uin[1] - 7)],
+          BLK, lw=4.2)
+    ax.text(ux - 24, uy - 22, "입력 14.8V", fontsize=8.8, color=GREY,
+            ha="center", va="center", zorder=17)
+    ax.text(ux + 114, uy - 22, "출력 5V", fontsize=8.8, color=GRN,
+            ha="center", va="center", zorder=17)
+    callout(ax, ux - 62, uin[1] + 66, 6, col=RED)
+
+    # ── Raspberry Pi ──
+    pix, piy = GX + 1240, by + 150
+    pi = dr_pi(ax, pix, piy, s=0.62, labels=False)
+    ax.text(pix + 93, piy - 20, "Raspberry Pi 4", fontsize=10.6,
+            fontweight="bold", color=INK, ha="center", zorder=17)
+    fzx, fzy = uout[0] + 62, uout[1]
+    cable(ax, [uout, (fzx - 26, fzy)], GRN, lw=4.6)
+    cable(ax, [(fzx + 26, fzy), (fzx + 154, fzy), (fzx + 154, piy + 168),
+               (pi["gpio_x"] + 14, piy + 168),
+               (pi["gpio_x"] + 14, pi["gpio"][1] + 4)], GRN, lw=4.6)
+    ax.add_patch(patches.FancyBboxPatch((fzx - 26, fzy - 13), 52, 26,
+                 boxstyle="round,pad=0,rounding_size=6",
+                 fc="#FFFFFF", ec=WARN, lw=1.8, zorder=14))
+    ax.text(fzx, fzy, "3A", fontsize=9.8, fontweight="bold", color=WARN,
+            ha="center", va="center", zorder=15)
+    ax.text(fzx, fzy + 24, "인라인 퓨즈", fontsize=8.6, fontweight="bold",
+            color=WARN, ha="center", va="bottom", zorder=15)
+    ax.text(pi["gpio_x"] + 92, piy + 176, "J8-2 / J8-6  ·  5V / GND",
+            fontsize=9.2, fontweight="bold", color=GRN, ha="center",
+            va="bottom", zorder=17)
+    callout(ax, fzx + 154, (fzy + piy + 168) / 2, 7, col=GRN)
+
+    note(ax, GX + 20, by - 110, GW - 40, 98, "FC 내장 BEC로 Pi를 급전하지 말 것",
+         ["KoA FC의 5V 출력은 2.5A뿐이고 Pi 4는 최대 3A를 요구한다. "
+          "반드시 별도 UBEC로 Pi에 급전하고, UBEC 접지와 FC 접지는 전원 분배판 한 점에서 만나게 한다.",
+          "J8-2/6 급전은 Pi 보드의 폴리퓨즈를 우회한다. 인라인 3A 퓨즈를 반드시 넣는다."])
+
+
+def signal_panel(ax, GX, ay, GW):
+    """FC 중심 신호 결선도. 설명서 3장과 슬라이드가 같이 쓴다."""
+    panel(ax, GX, ay, GW, 720, 1, "FC 중심 신호 결선도", accent=BLU)
+
+    fx, fy = GX + 700, ay + 300
+    ports = dr_fc(ax, fx, fy, s=1.0, detail=False, front_labels=False)
+    ax.text(fx + 150, fy + 210 + 72, "KoA FC H743", fontsize=12.4,
+            fontweight="bold", color=INK, ha="center", zorder=18)
+
+    def ptag(txt, sub, px, py, col, ha="center"):
+        ax.text(px, py, txt, fontsize=9.8, fontweight="bold", color=col,
+                ha=ha, va="center", zorder=18)
+        ax.text(px, py - 16, sub, fontsize=8.2, color=GREY, ha=ha,
+                va="center", zorder=18)
+
+    ax.text(ports["POWER"][0], ay + 252, "POWER", fontsize=8.8, color=GREY,
+            ha="center", va="center", zorder=18)
+    ax.text(ports["POWER"][0], ay + 236, "→ 2장", fontsize=8.0, color=GREY,
+            ha="center", va="center", zorder=18)
+    ptag("PWM", "10핀", ports["PWM"][0] + 18, ay + 272, "#9A7A00", ha="left")
+    ptag("RC", "4핀", ports["RC"][0] + 16, ay + 248, BLU, ha="left")
+    ptag("GPS", "6핀", ports["GPS"][0] + 16, ay + 272, GRN, ha="left")
+
+    # ── ESC 신호 (PWM 1~4) ──
+    ex = GX + 120
+    chip(ax, ex, ay + 60, 240, 78, "ESC 신호 4개", "PWM 1~4 → M1~M4")
+    ax.text(ex + 120, ay + 42, "10핀 → 서보 3핀 변환 하네스", fontsize=9.2,
+            color=GREY, ha="center", zorder=15)
+    cable(ax, [ports["PWM"], (ports["PWM"][0], ay + 230),
+               (ex + 120, ay + 230), (ex + 120, ay + 138)], YEL, lw=4.4)
+    callout(ax, ex + 120, ay + 230, 1, col="#9A7A00")
+
+    # ── 수신기 (RC) ──
+    rx_ = GX + 520
+    rtip = dr_rx(ax, rx_, ay + 70, s=1.3)
+    cable(ax, [ports["RC"], (ports["RC"][0], ay + 195),
+               (rtip[0], ay + 195), rtip], BLU, lw=4.4)
+    callout(ax, rtip[0], ay + 195, 2, col=BLU)
+
+    # ── GPS + 나침반 ──
+    gx_ = GX + 1150
+    gtip = dr_gps(ax, gx_, ay + 125, s=1.25)
+    cable(ax, [ports["GPS"], (ports["GPS"][0], ay + 36),
+               (gtip[0], ay + 36), gtip], GRN, lw=4.4)
+    callout(ax, ports["GPS"][0], ay + 36, 3, col=GRN)
+
+    # ── 광류 + 거리계 (I2C) ──
+    ftip = dr_flow(ax, GX + 150, ay + 330, s=1.5)
+    cable(ax, [ftip, (ftip[0], ay + 480), (GX + 640, ay + 480),
+               (GX + 640, ports["I2C"][1]), ports["I2C"]], PI2C, lw=4.0)
+    callout(ax, GX + 640, ay + 480, 5, col=PI2C)
+
+    # ── Raspberry Pi (TELEM2 → GPIO UART 직결) ──
+    pix, piy = GX + 1280, ay + 330
+    pi = dr_pi(ax, pix, piy, s=0.72, labels=False)
+    ax.text(pix + 150, piy + 196, "Raspberry Pi 4", fontsize=11.4,
+            fontweight="bold", color=INK, ha="center", zorder=18)
+    ax.text(pix + 150, piy + 172, "J8  8 / 10 / 6 번", fontsize=9.2,
+            fontweight="bold", color=ORG, ha="center", zorder=18)
+    run_y, gxp = ay + 562, pi["gpio_x"] + 30
+    cable(ax, [ports["TELEM2"], (ports["TELEM2"][0], run_y),
+               (gxp, run_y), (gxp, pi["gpio"][1])], ORG, lw=4.4)
+    ax.text(ports["TELEM2"][0], ay + 534, "TELEM2", fontsize=8.0,
+            fontweight="bold", color=ORG, ha="center", va="bottom", zorder=20,
+            bbox=dict(boxstyle="round,pad=0.16", fc=PAPER, ec="none"))
+    callout(ax, GX + 1196, run_y, 4, col=ORG)
+    ax.text(GX + 1106, run_y + 58, "MAVLink2  ·  921600 bps", fontsize=9.8,
+            fontweight="bold", color=ORG, ha="center", va="center", zorder=18)
+    ax.text(GX + 1106, run_y + 34, "TX · RX · GND 3선 직결 (5V 선 제거)",
+            fontsize=9.0, color=GREY, ha="center", va="center", zorder=18)
+
+    # ── 카메라 → Pi CSI ──
+    ctip = dr_camera(ax, GX + 1430, ay + 170, s=1.3)
+    cable(ax, [ctip, (GX + 1266, ctip[1]),
+               (GX + 1266, pi["csi"][1]), pi["csi"]], "#8A8578", lw=4.0)
+    callout(ax, GX + 1266, ay + 280, 6, col="#8A8578")
+
+    note(ax, GX + 290, ay + 520, 400, 142,
+         "TELEM2 의 5V 선은 뽑아 둔다",
+         ["Pi 는 UBEC 으로 이미 급전된다.", "두 전원이 맞물리면 FC 내장 BEC(2.5A)가",
+          "수신기까지 끌고 내려가 조종 불능이 된다.",
+          "TX · RX · GND 3선만 연결한다."])
 
 
 def sheet2():
@@ -797,70 +968,7 @@ def sheet2():
             fontsize=9.4, color=GREY, zorder=6)
 
     # ═══ 패널 2 : 전자부 전원 ═════════════════════════════
-    by, bh = 420, 420
-    panel(ax, GX, by, GW, bh, 2,
-          "전자부 전원 : 전원 분배 → FC / UBEC → Raspberry Pi", accent=GRN)
-
-    BUS_R, BUS_B = by + 48, by + 24          # 패널 아래쪽 +/- 간선
-
-    qx, qy = GX + 60, by + 130
-    dr_pdb(ax, qx, qy, s=0.82)
-    ax.text(qx + 61, qy - 20, "전원 분배 (패널 1)", fontsize=9.8,
-            color=GREY, ha="center", zorder=16)
-    # 분배판 → 간선
-    cable(ax, [(qx + 123, qy + 43), (qx + 170, qy + 43),
-               (qx + 170, BUS_R), (GW + GX - 120, BUS_R)], RED, lw=4.4)
-    cable(ax, [(qx + 123, qy + 18), (qx + 148, qy + 18),
-               (qx + 148, BUS_B), (GW + GX - 120, BUS_B)], BLK, lw=4.4)
-    ax.text(GX + 36, BUS_R, "+", fontsize=15, fontweight="bold", color=RED,
-            ha="center", va="center", zorder=16)
-    ax.text(GX + 36, BUS_B, "-", fontsize=17, fontweight="bold", color=INK,
-            ha="center", va="center", zorder=16)
-
-    # ── KoA FC ──
-    fx, fy = GX + 420, by + 170
-    ports = dr_fc(ax, fx, fy, s=0.60, detail=False, front_labels=False)
-    ax.text(fx + 90, fy + 126 + 46, "KoA FC H743", fontsize=11.0,
-            fontweight="bold", color=INK, ha="center", zorder=17)
-    pwx = ports["POWER"][0]
-    cable(ax, [(pwx + 7, BUS_R), (pwx + 7, ports["POWER"][1])], RED, lw=4.2)
-    cable(ax, [(pwx - 7, BUS_B), (pwx - 7, ports["POWER"][1])], BLK, lw=4.2)
-    ax.text(pwx - 34, ports["POWER"][1] - 16, "POWER", fontsize=9.6,
-            fontweight="bold", color=RED, ha="right", va="center", zorder=17)
-    ax.text(pwx - 34, ports["POWER"][1] - 36, "6핀 · Vbat/GND", fontsize=8.6,
-            color=GREY, ha="right", va="center", zorder=17)
-    callout(ax, pwx + 42, (BUS_R + ports["POWER"][1]) / 2, 5, col=RED)
-
-    # ── UBEC ──
-    ux, uy = GX + 880, by + 190
-    uin, uout = dr_ubec(ax, ux, uy, s=1.0, labels=False)
-    ax.text(ux + 45, uy + 58, "UBEC 5V 5A", fontsize=10.8,
-            fontweight="bold", color=INK, ha="center", zorder=17)
-    cable(ax, [(ux - 62, BUS_R), (ux - 62, uin[1] + 7), (uin[0], uin[1] + 7)],
-          RED, lw=4.2)
-    cable(ax, [(ux - 90, BUS_B), (ux - 90, uin[1] - 7), (uin[0], uin[1] - 7)],
-          BLK, lw=4.2)
-    ax.text(ux - 24, uy - 22, "입력 14.8V", fontsize=8.8, color=GREY,
-            ha="center", va="center", zorder=17)
-    ax.text(ux + 114, uy - 22, "출력 5V", fontsize=8.8, color=GRN,
-            ha="center", va="center", zorder=17)
-    callout(ax, ux - 62, uin[1] + 66, 6, col=RED)
-
-    # ── Raspberry Pi ──
-    pix, piy = GX + 1240, by + 150
-    pi = dr_pi(ax, pix, piy, s=0.62, labels=False)
-    ax.text(pix + 93, piy - 20, "Raspberry Pi 4", fontsize=10.6,
-            fontweight="bold", color=INK, ha="center", zorder=17)
-    cable(ax, [uout, (uout[0] + 52, uout[1]),
-               (uout[0] + 52, pi["usbc"][1]), pi["usbc"]], GRN, lw=4.6,
-          label="5V", lx=uout[0] + 52, ly=(uout[1] + pi["usbc"][1]) / 2)
-    ax.text(pi["usbc"][0] - 16, pi["usbc"][1] - 30, "USB-C", fontsize=8.8,
-            color=GREY, ha="center", va="center", zorder=17)
-    callout(ax, pi["usbc"][0] - 70, pi["usbc"][1], 7, col=GRN)
-
-    note(ax, GX + 20, 320, GW - 40, 78, "FC 내장 BEC로 Pi를 급전하지 말 것",
-         ["KoA FC의 5V 출력은 2.5A뿐이고 Pi 4는 최대 3A를 요구한다. "
-          "반드시 별도 UBEC로 Pi에 급전하고, UBEC 접지와 FC 접지는 전원 분배판 한 점에서 만나게 한다."])
+    power_panel(ax, GX, 420, GW)
 
     # ═══ 배선 표 ═════════════════════════════════════════
     head = ["#", "구간", "전선", "색 / 극성", "확인 사항"]
@@ -877,15 +985,13 @@ def sheet2():
          "KoA FC는 VBAT 26V까지 직결. 별도 파워모듈이 필요 없다"],
         ["6", "전원 분배 → UBEC 입력", "20 AWG", (RED, "빨강 + / 검정 -"),
          "입력단에서 14.8V가 나오는지 먼저 측정한다"],
-        ["7", "UBEC 출력 → Pi USB-C", "5V 5A", (GRN, "5V / GND"),
-         "Pi에 꽂기 전 무부하 출력이 5.0~5.2V인지 측정한다"],
+        ["7", "UBEC 출력 → Pi J8-2 / J8-6", "18 AWG", (GRN, "5V / GND"),
+         "인라인 3A 퓨즈. 꽂기 전 무부하 출력이 5.0~5.2V인지 측정한다"],
     ]
     table(ax, GX, 58, GW, head, trows, [0.04, 0.22, 0.10, 0.15, 0.49])
 
-    fig.savefig("manual_2_power.png", facecolor=PAPER,
-                bbox_inches="tight", pad_inches=0.12)
+    save(fig, "manual_2_power")
     plt.close(fig)
-    print("manual_2_power.png")
 
 
 # ═══════════════════════ 3장 : 신호 배선 ═══════════════════════
@@ -952,6 +1058,67 @@ def parambox(ax, x, y, w, h, title, rows):
                     va="center", zorder=6)
 
 
+def uartmap(ax, x, y, w, h):
+    """FC TELEM2 6핀 -> Raspberry Pi J8 물리핀 대응표."""
+    ax.add_patch(patches.FancyBboxPatch((x, y), w, h,
+                 boxstyle="round,pad=0,rounding_size=8",
+                 fc="#FFFFFF", ec=ORG, lw=1.8, zorder=8))
+    ax.add_patch(patches.Rectangle((x, y + h - 36), w, 36, fc=ORG,
+                 ec="none", zorder=9))
+    ax.text(x + 14, y + h - 18, "TELEM2 → Pi J8 결선", fontsize=11.0,
+            fontweight="bold", color="#FFFFFF", va="center", zorder=10)
+    ax.text(x + w - 14, y + h - 18, "TX↔RX 교차", fontsize=9.0,
+            color="#FFFFFF", ha="right", va="center", zorder=10, alpha=0.9)
+
+    cl, cr = x + 18, x + w - 18
+    ax.text(cl, y + h - 56, "FC TELEM2", fontsize=9.2, fontweight="bold",
+            color=GREY, va="center", zorder=10)
+    ax.text(cr, y + h - 56, "Pi 40핀 헤더 (J8)", fontsize=9.2,
+            fontweight="bold", color=GREY, ha="right", va="center", zorder=10)
+    ax.plot([cl, cr], [y + h - 70]*2, color=RULE, lw=1.0, zorder=10)
+
+    rows = [
+        ("1", "5V",  None,  "연결하지 않는다", WARN),
+        ("2", "TX",  "->",  "10번  GPIO15  RXD", INK),
+        ("3", "RX",  "<-",  "8번   GPIO14  TXD", INK),
+        ("4", "CTS", None,  "미사용", GREY),
+        ("5", "RTS", None,  "미사용", GREY),
+        ("6", "GND", "-",   "6번   GND", INK),
+    ]
+    for i, (pin, sig, arrow, dst, col) in enumerate(rows):
+        ry = y + h - 94 - i*30
+        ax.add_patch(patches.Rectangle((cl, ry - 10), 21, 20,
+                     fc=INK if col is not GREY else "#A7B2BC",
+                     ec="none", zorder=10))
+        ax.text(cl + 10.5, ry, pin, fontsize=8.6, fontweight="bold",
+                color="#FFFFFF", ha="center", va="center", zorder=11)
+        ax.text(cl + 32, ry, sig, fontsize=9.6, fontweight="bold",
+                color=col, va="center", zorder=10)
+        if arrow == "->":
+            ax.annotate("", xy=(cl + 168, ry), xytext=(cl + 88, ry),
+                        arrowprops=dict(arrowstyle="-|>", color=ORG, lw=2.0),
+                        zorder=10)
+        elif arrow == "<-":
+            ax.annotate("", xy=(cl + 88, ry), xytext=(cl + 168, ry),
+                        arrowprops=dict(arrowstyle="-|>", color=ORG, lw=2.0),
+                        zorder=10)
+        elif arrow == "-":
+            ax.plot([cl + 88, cl + 168], [ry]*2, color="#2A2A2A", lw=2.0,
+                    zorder=10)
+        else:
+            ax.plot([cl + 94, cl + 162], [ry]*2, color="#C9D2DA", lw=1.6,
+                    zorder=10, dashes=(3, 3))
+        ax.text(cl + 180, ry, dst, fontsize=9.2,
+                fontweight="bold" if col is INK else "normal",
+                color=col, va="center", zorder=10)
+
+    ax.plot([cl, cr], [y + 44]*2, color=RULE, lw=1.0, zorder=10)
+    ax.text(cl, y + 29, "Pi : config.txt 에 dtoverlay=disable-bt",
+            fontsize=8.8, fontweight="bold", color=INK, va="center", zorder=10)
+    ax.text(cl, y + 13, "기본 mini-UART 는 921600 bps 에서 바이트를 흘린다",
+            fontsize=8.4, color=GREY, va="center", zorder=10)
+
+
 def sheet3():
     w, h = 1760, 1740
     fig, ax = new_sheet(w, h, "3. 신호 배선",
@@ -960,83 +1127,7 @@ def sheet3():
     GX, GW = 44, w - 88
 
     # ═══ 패널 1 : FC 중심 신호 결선도 ═════════════════════
-    ay = 870
-    panel(ax, GX, ay, GW, 720, 1, "FC 중심 신호 결선도", accent=BLU)
-
-    fx, fy = GX + 700, ay + 300
-    ports = dr_fc(ax, fx, fy, s=1.0, detail=False, front_labels=False)
-    ax.text(fx + 150, fy + 210 + 72, "KoA FC H743", fontsize=12.4,
-            fontweight="bold", color=INK, ha="center", zorder=18)
-
-    def ptag(txt, sub, px, py, col, ha="center"):
-        ax.text(px, py, txt, fontsize=9.8, fontweight="bold", color=col,
-                ha=ha, va="center", zorder=18)
-        ax.text(px, py - 16, sub, fontsize=8.2, color=GREY, ha=ha,
-                va="center", zorder=18)
-
-    ax.text(ports["POWER"][0], ay + 252, "POWER", fontsize=8.8, color=GREY,
-            ha="center", va="center", zorder=18)
-    ax.text(ports["POWER"][0], ay + 236, "→ 2장", fontsize=8.0, color=GREY,
-            ha="center", va="center", zorder=18)
-    ptag("PWM", "10핀", ports["PWM"][0] + 18, ay + 272, "#9A7A00", ha="left")
-    ptag("RC", "4핀", ports["RC"][0] + 16, ay + 248, BLU, ha="left")
-    ptag("GPS", "6핀", ports["GPS"][0] + 16, ay + 272, GRN, ha="left")
-
-    # ── ESC 신호 (PWM 1~4) ──
-    ex = GX + 120
-    chip(ax, ex, ay + 60, 240, 78, "ESC 신호 4개", "PWM 1~4 → M1~M4")
-    ax.text(ex + 120, ay + 42, "10핀 → 서보 3핀 변환 하네스", fontsize=9.2,
-            color=GREY, ha="center", zorder=15)
-    cable(ax, [ports["PWM"], (ports["PWM"][0], ay + 230),
-               (ex + 120, ay + 230), (ex + 120, ay + 138)], YEL, lw=4.4)
-    callout(ax, ex + 120, ay + 230, 1, col="#9A7A00")
-
-    # ── 수신기 (RC) ──
-    rx_ = GX + 520
-    rtip = dr_rx(ax, rx_, ay + 70, s=1.3)
-    cable(ax, [ports["RC"], (ports["RC"][0], ay + 195),
-               (rtip[0], ay + 195), rtip], BLU, lw=4.4)
-    callout(ax, rtip[0], ay + 195, 2, col=BLU)
-
-    # ── GPS + 나침반 ──
-    gx_ = GX + 1150
-    gtip = dr_gps(ax, gx_, ay + 125, s=1.25)
-    cable(ax, [ports["GPS"], (ports["GPS"][0], ay + 36),
-               (gtip[0], ay + 36), gtip], GRN, lw=4.4)
-    callout(ax, ports["GPS"][0], ay + 36, 3, col=GRN)
-
-    # ── 광류 + 거리계 (I2C) ──
-    ftip = dr_flow(ax, GX + 150, ay + 330, s=1.5)
-    cable(ax, [ftip, (ftip[0], ay + 480), (GX + 640, ay + 480),
-               (GX + 640, ports["I2C"][1]), ports["I2C"]], PI2C, lw=4.0)
-    callout(ax, GX + 640, ay + 480, 5, col=PI2C)
-
-    # ── Raspberry Pi (TELEM2 경유) ──
-    pix, piy = GX + 1280, ay + 330
-    pi = dr_pi(ax, pix, piy, s=0.72, labels=False)
-    ax.text(pix + 108, piy + 164, "Raspberry Pi 4", fontsize=11.4,
-            fontweight="bold", color=INK, ha="center", zorder=18)
-    chip(ax, GX + 1030, ay + 250, 150, 54, "USB-TTL", "3.3V FTDI", fc="#2A2030")
-    cable(ax, [ports["TELEM2"], (GX + 1105, ports["TELEM2"][1]),
-               (GX + 1105, ay + 304)], ORG, lw=4.4)
-    cable(ax, [(GX + 1180, ay + 277), (GX + 1560, ay + 277),
-               (GX + 1560, pi["usb"][1]), pi["usb"]], ORG, lw=4.4)
-    callout(ax, GX + 1105, ay + 420, 4, col=ORG)
-    ax.text(GX + 1120, ay + 372, "MAVLink2", fontsize=9.4, color=GREY,
-            ha="left", va="center", zorder=18)
-    ax.text(GX + 1120, ay + 354, "921600 bps", fontsize=9.4, color=GREY,
-            ha="left", va="center", zorder=18)
-
-    # ── 카메라 → Pi CSI ──
-    ctip = dr_camera(ax, GX + 1330, ay + 570, s=1.3)
-    cable(ax, [ctip, (GX + 1218, ctip[1]),
-               (GX + 1218, pi["csi"][1]), pi["csi"]], "#8A8578", lw=4.0)
-    callout(ax, GX + 1218, ay + 480, 6, col="#8A8578")
-
-    note(ax, GX + 300, ay + 528, 390, 130,
-         "USB-TTL 5V 선 연결 금지",
-         ["FC 와 Pi 가 서로 역급전되어", "양쪽이 모두 손상된다.",
-          "TX · RX · GND 3선만 연결하고", "5V 선은 뽑아 둔다."])
+    signal_panel(ax, GX, 870, GW)
 
     # ═══ 패널 2 : 커넥터 핀맵 ═════════════════════════════
     by = 440
@@ -1068,9 +1159,11 @@ def sheet3():
             "PWM 커넥터는 1번이 GND, 9번이 PWM1 이다. M1~M4 는 PWM1~PWM4 에 순서대로 들어간다.",
             fontsize=9.6, color=GREY, zorder=15)
 
+    uartmap(ax, GX + 1236, by + 26, 396, 306)
+
     # ═══ 경고 ════════════════════════════════════════════
     note(ax, GX, 330, GW, 80, "TX 와 RX 는 반드시 엇갈려 연결한다",
-         ["FC TELEM2 의 TX 는 Pi 쪽 RX 로, FC 의 RX 는 Pi 쪽 TX 로 간다. "
+         ["FC TELEM2 의 TX(2번) 는 Pi 의 RXD(J8 10번) 로, FC 의 RX(3번) 는 Pi 의 TXD(J8 8번) 로 간다. "
           "같은 이름끼리 연결하면 통신이 전혀 되지 않는다."])
 
     # ═══ 표 + 파라미터 ═══════════════════════════════════
@@ -1083,12 +1176,12 @@ def sheet3():
          "수신기는 FC 내장 5V BEC 에서 급전된다"],
         ["S3", "FC GPS → GPS + 나침반", "6핀 JST-GH",
          "FC 에 나침반이 없으므로 실내에서도 외장 나침반이 필요하다"],
-        ["S4", "FC TELEM2 → Pi USB-A", "USB-TTL 3.3V",
-         "TX↔RX 교차. 5V 선 연결 금지"],
+        ["S4", "FC TELEM2 → Pi J8-8/10/6", "JST-GH 6핀 → 듀폰 3선",
+         "GPIO UART 직결. TX↔RX 교차. 5V 선 제거"],
         ["S5", "FC I2C → 광류 + 거리계", "4핀 JST-GH",
          "실내 위치 유지용. GPS 없이 비행할 때 필수"],
-        ["S6", "카메라 → Pi CSI", "15핀 FPC 200mm",
-         "ESC 전력선과 이격한다. 전방 45도 하향 고정"],
+        ["S6", "카메라 → Pi CSI", "15핀 FPC 300~500mm",
+         "동봉 200mm 는 짧다. ESC 전력선과 이격. 전방 45도 하향 고정"],
     ]
     table(ax, GX, 60, tw, head, trows, [0.05, 0.25, 0.20, 0.50])
 
@@ -1102,10 +1195,8 @@ def sheet3():
         ("BATT_MONITOR", "4", "전압+전류"),
     ])
 
-    fig.savefig("manual_3_signal.png", facecolor=PAPER,
-                bbox_inches="tight", pad_inches=0.12)
+    save(fig, "manual_3_signal")
     plt.close(fig)
-    print("manual_3_signal.png")
 
 
 # ═══════════════════════ 4장 : 조립 순서 ═══════════════════════
@@ -1257,7 +1348,7 @@ def sheet4():
         "FC 전방 표시가 기체 전방과 일치하는가",
         "GPS 모듈 전방 화살표가 기체 전방과 같은가",
         "microSD 가 FC 에 삽입되어 있는가",
-        "USB-TTL 의 5V 선이 분리되어 있는가",
+        "TELEM2 케이블의 5V 선이 제거되어 있는가",
         "조종기 스로틀이 최하단에 있는가",
         "페일세이프 동작을 확인했는가",
         "실내 시연이면 프로펠러 가드를 달았는가",
@@ -1281,10 +1372,159 @@ def sheet4():
           "2. 시동을 해제한다 (Disarm)",
           "3. 조종기로 수동 전환 — 조종기가 항상 우선"])
 
-    fig.savefig("manual_4_assembly.png", facecolor=PAPER,
-                bbox_inches="tight", pad_inches=0.12)
+    save(fig, "manual_4_assembly")
     plt.close(fig)
-    print("manual_4_assembly.png")
+
+
+# ═══════════════ 발표 슬라이드용 큰 글씨 도면 ═══════════════
+# 설명서 도면은 A3 로 뽑아 손에 들고 보는 물건이라 밀도가 높다.
+# 슬라이드에서는 화면 폭의 3분의 1 로 줄어들어 글자가 4 px 이 된다.
+# 그래서 같은 내용을 요소를 덜어내고 글자를 3배로 키워 다시 그린다.
+# figsize 를 w/130 으로 잡아 같은 포인트 수가 더 크게 보이도록 했다.
+
+def slide_sheet(w, h):
+    fig, ax = plt.subplots(figsize=(w/130, h/130), dpi=DPI)
+    ax.set_facecolor(PAPER); fig.patch.set_facecolor(PAPER)
+    ax.set_xlim(0, w); ax.set_ylim(0, h); ax.axis("off")
+    return fig, ax
+
+
+def slide_head(ax, w, h, title, sub):
+    ax.text(40, h - 48, title, fontsize=31, fontweight="bold", color=INK,
+            va="center")
+    ax.text(40, h - 94, sub, fontsize=18, color=GREY, va="center")
+    ax.plot([40, w - 40], [h - 126]*2, color=RULE, lw=2.0)
+
+
+def slide_warn(ax, x, y, w, h, title, lines):
+    ax.add_patch(patches.FancyBboxPatch((x, y), w, h,
+                 boxstyle="round,pad=0,rounding_size=10",
+                 fc="#FFF5F5", ec=WARN, lw=2.2))
+    ax.add_patch(patches.Circle((x + 36, y + h - 34), 16, fc=WARN, ec="none"))
+    ax.text(x + 36, y + h - 34, "!", fontsize=17, fontweight="bold",
+            color="#FFFFFF", ha="center", va="center")
+    ax.text(x + 64, y + h - 34, title, fontsize=20, fontweight="bold",
+            color=WARN, va="center")
+    for i, ln in enumerate(lines):
+        ax.text(x + 30, y + h - 84 - i*46, ln, fontsize=18, color=INK,
+                va="center")
+
+
+def dev_box(ax, x, y, w, h, name, sub, cap, dark=False):
+    ax.add_patch(patches.FancyBboxPatch((x, y), w, h,
+                 boxstyle="round,pad=0,rounding_size=14",
+                 fc=PCB_DK if dark else PCB, ec="#0A1A14", lw=2.6))
+    ax.text(x + w/2, y + h*0.60, name, fontsize=25, fontweight="bold",
+            color="#CFE3D8", ha="center", va="center")
+    ax.text(x + w/2, y + h*0.40, sub, fontsize=17, color="#7FA893",
+            ha="center", va="center")
+    ax.text(x + w/2, y - 34, cap, fontsize=21, fontweight="bold", color=ORG,
+            ha="center", va="center")
+
+
+def slide_link():
+    """FC TELEM2 → Pi J8 직결. p4 신호 계통용."""
+    W, H = 1500, 840
+    fig, ax = slide_sheet(W, H)
+    slide_head(ax, W, H, "FC ↔ 라즈베리파이 : GPIO UART 직결",
+               "USB-TTL 변환기 없이 TELEM2 를 Pi 핀헤더에 바로 꽂는다")
+
+    bw, by, bh = 230, 380, 270
+    dev_box(ax, 40, by, bw, bh, "KoA FC", "H743", "TELEM2 · 6핀")
+    px = W - 40 - bw
+    dev_box(ax, px, by, bw, bh, "Pi 4", "BCM2711", "J8 · 40핀 헤더", dark=True)
+
+    for ry, sig, arrow, dst in ((590, "TX", "->", "10번  GPIO15  RXD"),
+                                (515, "RX", "<-", "8번  GPIO14  TXD"),
+                                (440, "GND", "-", "6번  GND")):
+        col = ORG if arrow != "-" else INK
+        ax.text(bw + 68, ry, sig, fontsize=24, fontweight="bold", color=col,
+                ha="left", va="center")
+        x0, x1 = bw + 178, px - 470
+        if arrow == "-":
+            ax.plot([x0, x1], [ry]*2, color=col, lw=4.2, solid_capstyle="round")
+        else:
+            c, d = (x0, x1) if arrow == "->" else (x1, x0)
+            ax.annotate("", xy=(d, ry), xytext=(c, ry),
+                        arrowprops=dict(arrowstyle="-|>", color=col, lw=4.2,
+                                        mutation_scale=36))
+        ax.text(x1 + 30, ry, dst, fontsize=20, fontweight="bold", color=INK,
+                ha="left", va="center")
+
+    slide_warn(ax, 40, 150, W - 80, 165, "5V 선은 연결하지 않는다",
+               ["Pi 는 UBEC 으로 이미 급전된다. 두 전원이 맞물리면",
+                "FC 내장 BEC(2.5A)가 수신기까지 끌고 내려가 조종 불능이 된다."])
+    ax.text(40, 104, "MAVLink2  ·  921600 bps", fontsize=22, fontweight="bold",
+            color=ORG, va="center")
+    ax.text(40, 54, "Pi : config.txt 에 dtoverlay=disable-bt  "
+                    "— 기본 mini-UART 는 921600 bps 에서 바이트를 흘린다",
+            fontsize=17, color=GREY, va="center")
+    save(fig, "slide_link"); plt.close(fig)
+
+
+def slide_feed():
+    """UBEC → Pi J8-2/6 급전. p4 전원 계통용."""
+    W, H = 1500, 800
+    fig, ax = slide_sheet(W, H)
+    slide_head(ax, W, H, "라즈베리파이 급전 : UBEC → J8-2 / J8-6",
+               "FC 내장 BEC 는 2.5A 뿐이고 Pi 4 는 3A 를 요구한다")
+
+    y, bh = 370, 230
+    for bx, bw_, nm, sb, col in ((40, 250, "전원 분배", "4S · 14.8V", RED),
+                                 (440, 250, "UBEC", "5V / 5A", GRN),
+                                 (1190, 260, "Pi 4", "J8-2 / J8-6", GRN)):
+        ax.add_patch(patches.FancyBboxPatch((bx, y), bw_, bh,
+                     boxstyle="round,pad=0,rounding_size=14",
+                     fc="#1C2026", ec=INK, lw=2.6))
+        ax.text(bx + bw_/2, y + bh*0.60, nm, fontsize=25, fontweight="bold",
+                color="#E8EDF3", ha="center", va="center")
+        ax.text(bx + bw_/2, y + bh*0.36, sb, fontsize=18, color=col,
+                ha="center", va="center")
+
+    mid = y + bh/2
+    ax.annotate("", xy=(435, mid), xytext=(300, mid),
+                arrowprops=dict(arrowstyle="-|>", color=RED, lw=4.4,
+                                mutation_scale=36))
+    ax.text(367, mid + 44, "14.8V", fontsize=18, fontweight="bold", color=RED,
+            ha="center", va="center")
+    ax.plot([695, 830], [mid]*2, color=GRN, lw=4.4, solid_capstyle="round")
+    ax.add_patch(patches.FancyBboxPatch((830, mid - 34), 160, 68,
+                 boxstyle="round,pad=0,rounding_size=10",
+                 fc="#FFFFFF", ec=WARN, lw=2.6))
+    ax.text(910, mid, "3A 퓨즈", fontsize=20, fontweight="bold", color=WARN,
+            ha="center", va="center")
+    ax.annotate("", xy=(1185, mid), xytext=(1000, mid),
+                arrowprops=dict(arrowstyle="-|>", color=GRN, lw=4.4,
+                                mutation_scale=36))
+    ax.text(1092, mid + 44, "5V", fontsize=18, fontweight="bold", color=GRN,
+            ha="center", va="center")
+    ax.text(1320, y - 34, "5V · GND  ·  18 AWG", fontsize=20,
+            fontweight="bold", color=GRN, ha="center", va="center")
+
+    slide_warn(ax, 40, 90, W - 80, 210, "FC 내장 BEC 로 Pi 를 급전하지 말 것",
+               ["UBEC 접지와 FC 접지는 전원 분배판 한 점에서 만나게 한다.",
+                "J8-2/6 급전은 Pi 보드의 폴리퓨즈를 우회하므로",
+                "인라인 3A 퓨즈를 반드시 넣는다."])
+    save(fig, "slide_feed"); plt.close(fig)
+
+
+def slide(stem, w, h, draw):
+    """발표 슬라이드용 단독 도면. 테두리와 머리글 없이 패널만."""
+    fig, ax = plt.subplots(figsize=(w/100, h/100), dpi=DPI)
+    ax.set_facecolor(PAPER); fig.patch.set_facecolor(PAPER)
+    ax.set_xlim(0, w); ax.set_ylim(0, h); ax.axis("off")
+    draw(ax)
+    save(fig, stem)
+    plt.close(fig)
+
+
+def slides():
+    slide("slide_signal", 1712, 764,
+          lambda ax: signal_panel(ax, 20, 22, 1672))
+    slide("slide_power", 1712, 596,
+          lambda ax: power_panel(ax, 20, 154, 1672))
+    slide_link()
+    slide_feed()
 
 
 if __name__ == "__main__":
@@ -1292,3 +1532,4 @@ if __name__ == "__main__":
     sheet2()
     sheet3()
     sheet4()
+    slides()

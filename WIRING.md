@@ -184,6 +184,32 @@ MOT_BAT_VOLT_MAX  16.8   4S 만충 (4 x 4.2 V)
 MOT_BAT_VOLT_MIN  13.2   4S 방전 (4 x 3.3 V)
 ```
 
+위 SERIAL 번호는 KoA 공식 보드 정의(`hwdef.dat`)로 확인했습니다.
+`SERIAL_ORDER = OTG1 USART2 UART4 USART1 USART3 UART7 UART5 UART8` 이므로
+**SERIAL1=TELEM1 · SERIAL2=TELEM2 · SERIAL3=GPS1 · SERIAL6=RC** 가 맞습니다.
+
+4-1-1. 펌웨어 : ArduCopter (PX4 아님)
+
+이 저장소의 비행 코드는 전부 **ArduPilot** 기준입니다(GUIDED·RTL·위 파라미터 이름).
+PX4 를 올리면 `flight/` 전체가 맞지 않습니다.
+
+| 항목 | 값 |
+|---|---|
+| 공식 포크 | [github.com/koadrone/ardupilot](https://github.com/koadrone/ardupilot) (ArduPilot 본가의 포크) |
+| 받을 파일 | 릴리스 `koafc-4.7.1` 의 **`arducopter.apj`** (CAN 안 쓰면 `-can` 아닌 쪽) |
+| 확인한 내용 | ArduCopter **V4.7.1** · board_id **1013** · 보드명 `KoaFC` · 이미지 1 412 348 B (선언값 일치) |
+| 보드 | STM32H743 · IMU BMI088 ×2 · 기압계 SPL06 |
+
+설치는 QGroundControl 에서 **Firmware → Advanced settings → Custom firmware file** 로
+이 `.apj` 를 고르면 됩니다(영상의 PX4 설치 절차와 같은 자리). 맥에서는 Mission Planner 가
+사실상 안 돌아가므로 QGC 를 그대로 쓰면 됩니다.
+
+> **나침반은 보드에 없습니다.** hwdef 에 `COMPASS` 줄이 없고 IMU·기압계만 있습니다.
+> 판매처 영상의 "지자기 센서 내장" 설명은 이 보드에 해당하지 않습니다.
+> 다만 `ALLOW_ARM_NO_COMPASS` 가 켜져 있어 **나침반 없이도 시동이 걸립니다.**
+> Stabilize·AltHold 로 하는 1·2단계 시연에는 외장 나침반이 필요 없고,
+> LOITER/GUIDED 를 쓰는 3단계에만 필요합니다.
+
 4-2. PC1 : Raspberry Pi 4 · J8 40핀 헤더
 
 ```
@@ -299,7 +325,7 @@ MOT_BAT_VOLT_MIN  13.2   4S 방전 (4 x 3.3 V)
 4. **FC 계통 (W02 / W05–08 / W09–11)** : KoA FC `POWER` 직결, `PWM` 모터 신호, `GPS`, `TELEM1`, `RC`.
 5. **1차 통전 시험** : 프로펠러 **없이** 전원 인가. Mission Planner로 모터 회전 방향 확인.
 6. **프로펠러 장착** : §6 표대로 MF9545 / MF9545 (역) 구분해 체결.
-7. **컴패니언 계통 (W13 / W15 / W18 / W12)** : UBEC → Pi(3 A 퓨즈), 카메라, USB-TTL.
+7. **컴패니언 계통 (W13 / W15 / W18 / W12)** : UBEC → Pi J8-2/6(3 A 퓨즈), 카메라, TELEM2 → Pi J8-8/10/6.
 8. **페이로드 계통 (W14 / W16 / W17 / W19–29)** : 레벨 시프터 → DMD-150 / LED / 앰프.
 9. **액추에이터 시험** : **기체를 고정한 상태에서** 전개. 120 N 반력이 기체를 밀어냅니다.
 10. **전체 통합 시험** : 비전 → 판단 → MAVLink → 전개 전 시퀀스를 지상에서 1회 완주.

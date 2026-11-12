@@ -163,7 +163,7 @@ LOITER / GUIDED 진입 자체가 막힙니다. GPS + 나침반 일체형 모듈�
 | GPS/나침반 | u-blox M8N | `GPS` + I2C | : |
 | 텔레메트리 | 2.4 GHz 공중 모듈 | `TELEM1` @57600 | 지상 Mission Planner |
 | 수신기 | Microzone MC6C S.BUS | `RC IN` | 상시 수동 개입 경로 |
-| 컴패니언 | Raspberry Pi 4 Model B 2GB | `TELEM2` @921600 | **3.3 V 로직 FTDI** USB-TTL 케이블. 921600이 불안정하면 115200으로 하향 |
+| 컴패니언 | Raspberry Pi 4 Model B 2GB | `TELEM2` @921600 | **GPIO UART 직결** (J8-8/10/6, 3.3 V). 921600이 불안정하면 115200으로 하향 |
 | 카메라 | Camera Module 3 Wide (IMX708) | CSI-2 | **102° 수평 / 120° 대각** FOV, 초점 5 cm~∞ |
 
 3-3. 전원 분배 및 페이로드
@@ -244,7 +244,7 @@ LOITER / GUIDED 진입 자체가 막힙니다. GPS + 나침반 일체형 모듈�
 | `MAIN OUT 4` | ESC 4 → **M4 후방우측 CW / 1045** | 서보 3핀 | |
 | `GPS` | M8N GPS/나침반 | 6핀 + 4핀 I2C | |
 | `TELEM 1` | 텔레메트리 공중 모듈 | 6핀 | 57600 bps |
-| `TELEM 2` | Pi 4 USB (USB-TTL) | **3.3 V FTDI** | 921600 bps. **5 V 선은 연결 금지**(역급전 방지) |
+| `TELEM 2` | Pi 4 J8-8 / 10 / 6 | **3.3 V 직결** | 921600 bps. TX↔RX 교차. **5 V 선은 연결 금지**(역급전 방지) |
 | `RC IN` | MC6C S.BUS 수신기 | 서보 3핀 | 비상 수동 조종 |
 
 **ArduPilot 파라미터**
@@ -292,7 +292,8 @@ MOT_BAT_VOLT_MIN = 13.2   # 4S 방전
 - [ ] PDB 입력단에 **470 µF / 25 V 저ESR 콘덴서** 장착 (ESC 스위칭 서지 흡수).
 - [ ] UBEC 5 V 레일에 **1000 µF** 벌크 콘덴서 (LED 돌입전류 흡수).
 - [ ] WS2812B **DIN에 470 Ω 직렬저항**.
-- [ ] USB-TTL 케이블의 **5 V 선은 절연 처리**.
+- [ ] `TELEM2` 케이블의 **5 V 선은 제거 또는 절연 처리**.
+- [ ] Pi `/boot/firmware/config.txt` 에 **`dtoverlay=disable-bt`** (mini-UART 는 921600 bps 에서 바이트를 흘림).
 - [ ] 프로펠러 **정/역 방향 확인** : 1045R은 M1·M2(CCW), 1045는 M3·M4(CW).
 - [ ] 첫 시동은 **반드시 프로펠러를 제거**하고 모터 회전 방향만 확인.
 - [ ] 파워모듈 5.3 V 레일에 Pi를 물리지 말 것 (2.25 A 한계).

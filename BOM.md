@@ -53,14 +53,14 @@
 
 | 품목 | 왜 필요한가 |
 |---|---|
-| **GPS + 나침반 모듈** | KoA FC 에 **나침반이 없습니다.** 실내에서도 EKF 의 yaw 추정에 필요 → 없으면 LOITER/GUIDED 진입 불가. 픽스호크 표준 GH1.25 6핀 |
+| **GPS + 나침반 모듈** | KoA FC 에 **나침반이 없습니다** (공식 `hwdef.dat` 확인 — IMU·기압계만 있음). LOITER/GUIDED 진입에 필요하므로 **3단계 전용**. `ALLOW_ARM_NO_COMPASS` 가 켜져 있어 Stabilize·AltHold 로 하는 1·2단계는 없이도 된다. 픽스호크 표준 GH1.25 6핀 |
 | **옵티컬 플로우 + 거리계** | 실내는 GPS 가 안 잡힙니다. 없으면 자율비행 시연 자체가 불가능 (예: Matek 3901-L0X) |
 | **프로펠러 가드** | 실내에서 사람 근처 비행. 접이식 프로펠러와 간섭하지 않는 제품으로 |
 | **microSD 카드** | Raspberry Pi 용 32 GB 이상 A1/A2. (FC 용 8 GB 는 동봉) |
 | **Camera Module 3 Wide** | 비전 입력 |
-| **USB-TTL 케이블** | **3.3 V 로직**. Pi ↔ FC TELEM2 |
+| **FC ↔ Pi 연결 케이블** | JST-GH 1.25 mm 6핀 → 듀폰. FC `TELEM2` ↔ Pi J8-8/10/6 **GPIO UART 직결**. **5 V 선 제거** |
 | **WS2812B 30 LED + 74AHCT125** | 방향 유도. Pi 3.3 V 는 LED 문턱 3.5 V 미달이라 시프터 필수 |
-| **MAX98357A + 3 W 4 Ω 스피커** | 음성 안내 |
+| **PAM8403 앰프 + 3 W 4 Ω 스피커** | 음성 안내. Pi 4 의 3.5 mm 잭에서 받는 아날로그 앰프 |
 | **4S 2800 mAh 배터리 1개 추가** | 체공 11.5분 vs 충전 1시간. 리허설+시연 당일 부족 |
 | **페이로드 구동부** | 기구 방식 결정 후 ([#9](https://github.com/kennykimtang/shepherdron/issues/9)) |
 

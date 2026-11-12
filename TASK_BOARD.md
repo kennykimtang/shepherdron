@@ -70,7 +70,8 @@ Shepherdron 작업 보드
 1-D. 3단계(자율)를 할 경우에만
 
 - [ ] **옵티컬 플로우 + 하향 거리계** (예: Matek 3901-L0X) — 실내는 GPS 가 안 잡힙니다
-- [ ] **GPS + 나침반 일체형** — **KoA FC 에 나침반이 없습니다.** 실내에서도 기수 방향에 필요
+- [ ] **GPS + 나침반 일체형** — KoA FC 에 나침반이 없습니다(hwdef 확인). LOITER/GUIDED 에 필요.
+      1·2단계는 `ALLOW_ARM_NO_COMPASS` 덕에 없이도 시동이 걸립니다
 
 1-E. 소모품
 
@@ -111,6 +112,9 @@ RadioMaster Pocket 은 18650 **2개를 직렬**로 쓰고 밸런스 선 없이 U
 
 3. 소프트웨어
 
+- [ ] **FC 펌웨어 : ArduCopter 4.7.1 설치** — [koadrone/ardupilot](https://github.com/koadrone/ardupilot)
+      릴리스 `koafc-4.7.1` 의 `arducopter.apj`. QGroundControl → Firmware →
+      Advanced → Custom firmware file. **PX4 를 올리면 `flight/` 가 전부 안 맞습니다**
 - [ ] **Pi UART 설정** — `/boot/firmware/config.txt` 에 `dtoverlay=disable-bt`,
       raspi-config 에서 로그인 셸 끄고 하드웨어 시리얼 켜기.
       **안 하면 mini-UART 에 물려 921600 bps 에서 바이트를 흘립니다**
