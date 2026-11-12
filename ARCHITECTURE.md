@@ -76,7 +76,7 @@ Pi 4에서 YOLOv8n은 320px NCNN으로도 **8~10 FPS**가 한계입니다. 노�
 python scripts/stream_camera.py --source csi --width 1280 --height 720
 
 # 터미널 2 — 판단·구동 에이전트
-python shepherdron_pi.py --fc /dev/ttyUSB0 --ground <노트북-IP> --altitude 10
+python shepherdron_pi.py --fc /dev/ttyAMA0 --ground <노트북-IP> --altitude 10
 ```
 
 지상 (노트북)

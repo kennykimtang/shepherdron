@@ -127,7 +127,7 @@ python -m flight.sitl_demo --forward 40 --right -25 --altitude 12
 ```python
 from flight import MavlinkController, SafetyLimits
 
-ctl = MavlinkController("/dev/ttyUSB0", baud=921600)   # W12, USB-TTL 3.3V FTDI
+ctl = MavlinkController("/dev/ttyAMA0", baud=921600)   # W12, TELEM2 → J8-8/10/6
 ctl.connect()
 ```
 
@@ -138,7 +138,11 @@ SERIAL2_PROTOCOL = 2     # MAVLink2
 SERIAL2_BAUD     = 921   # 불안정하면 115
 ```
 
-주의 USB-TTL 케이블의 **5 V 선은 연결하지 마세요** : 역급전 위험.
+주의 TELEM2 케이블의 **5 V 선은 연결하지 마세요** : 역급전 위험.
+
+`/dev/ttyAMA0` 를 쓰려면 `/boot/firmware/config.txt` 에 **`dtoverlay=disable-bt`** 를 넣고
+raspi-config 에서 시리얼 로그인 셸을 끕니다. 기본 `/dev/serial0` 은 mini-UART 라
+921600 bps 에서 바이트를 흘립니다.
 
 ---
 

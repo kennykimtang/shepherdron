@@ -12,7 +12,7 @@
     상태기계와 페일세이프가 전부 여기 있기 때문이다.
 
 사용법
-    python shepherdron_pi.py --fc /dev/ttyUSB0
+    python shepherdron_pi.py --fc /dev/ttyAMA0
     python shepherdron_pi.py --fc udp:127.0.0.1:14550 --dry-run    # SITL/로컬 검증
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ log = logging.getLogger("shepherdron.pi")
 
 def parse_args():
     p = argparse.ArgumentParser(description="Shepherdron onboard agent (decision + actuation)")
-    p.add_argument("--fc", default="/dev/ttyUSB0", help="비행제어기 연결 (시리얼 또는 udp:...)")
+    p.add_argument("--fc", default="/dev/ttyAMA0", help="비행제어기 연결 (시리얼 또는 udp:...)")
     p.add_argument("--baud", type=int, default=921600)
     p.add_argument("--ground", default="", help="지상국 주소 (비우면 수신한 곳으로 회신 안 함)")
     p.add_argument("--vision-port", type=int, default=47600)
