@@ -2,10 +2,14 @@
 """Shepherdron 기체 제어판 — 기체(Pi)에서 띄우고 브라우저로 조작한다.
 
     기체에서   python3 scripts/panel.py
-    노트북에서 http://actuator.local:8080
+    노트북에서 http://actuator.local:8080        비전 데모 (docs/ 를 그대로 서빙)
+               http://actuator.local:8080/panel  카메라 · 구동부 · FC 링크
 
-한 페이지에서 보는 것
-    카메라 영상 · 전개 구동부 · FC 링크 상태
+왜 docs/ 를 기체가 서빙하는가
+    같은 앱이 GitHub Pages 에도 올라가 있지만 그쪽은 https 다. 브라우저는
+    https 페이지가 http 영상을 불러오는 것을 혼합 콘텐츠로 막는다. 기체가
+    직접 서빙하면 페이지도 영상도 같은 http 출처라 막히지 않는다.
+    코드는 하나, 배포만 둘이다.
 
 왜 rpicam-vid 를 쓰는가
     scripts/stream_camera.py 는 OpenCV 를 쓴다. Pi OS Lite 에 OpenCV 를 올리면
@@ -37,6 +41,11 @@ from hardware.payload_tape import TapeBoomConfig, TapeBoomPayload  # noqa: E402
 
 log = logging.getLogger("shepherdron.panel")
 SOI, EOI = b"\xff\xd8", b"\xff\xd9"
+DOCS = pathlib.Path(__file__).resolve().parent.parent / "docs"
+MIME = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8",
+        ".onnx": "application/octet-stream", ".png": "image/png", ".jpg": "image/jpeg",
+        ".svg": "image/svg+xml", ".ico": "image/x-icon", ".md": "text/plain; charset=utf-8"}
 
 
 # ───────────────────────── 카메라 ─────────────────────────
@@ -365,14 +374,36 @@ def make_handler(svc, fc_device, fc_baud):
             self._send(json.dumps(obj).encode(), "application/json; charset=utf-8", code)
 
         def do_GET(self):                                   # noqa: N802
-            if self.path in ("/", "/index.html"):
+            path = self.path.split("?", 1)[0]
+            if path == "/panel":
                 self._send(PAGE.encode(), "text/html; charset=utf-8")
-            elif self.path == "/api/state":
+            elif path == "/api/state":
                 self._json(svc.snapshot())
-            elif self.path == "/camera.mjpg":
+            elif path == "/camera.mjpg":
                 self._mjpeg()
             else:
-                self._json({"error": "not found"}, 404)
+                self._static(path)
+
+        def _static(self, path):
+            """docs/ 를 그대로 내보낸다. 경로 탈출은 resolve 로 막는다."""
+            rel = path.lstrip("/") or "index.html"
+            try:
+                f = (DOCS / rel).resolve()
+                f.relative_to(DOCS.resolve())
+            except (ValueError, OSError):
+                return self._json({"error": "forbidden"}, 403)
+            if f.is_dir():
+                f = f / "index.html"
+            if not f.is_file():
+                return self._json({"error": "not found"}, 404)
+            ctype = MIME.get(f.suffix.lower(), "application/octet-stream")
+            data = f.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(data)
 
         def _mjpeg(self):
             self.send_response(200)
