@@ -56,15 +56,19 @@ class Camera:
     프레임이 쌓이지 않고 버려진다 — 실시간성이 지연보다 중요하다.
     """
 
-    def __init__(self, width=1280, height=720, fps=15, fake=False):
+    def __init__(self, width=960, height=540, fps=20, quality=80, fake=False):
         self.size = (width, height)
         self.fps = fps
+        self.quality = quality
         self.fake = fake
         self._jpeg: bytes | None = None
         self._lock = threading.Condition()
         self._stop = threading.Event()
         self._err = "" if fake else "시작하는 중"
         self._n = 0
+        self._measured = 0.0          # 실측 fps. 설정값이 아니라 실제로 나오는 수
+        self._t0 = time.monotonic()
+        self._n0 = 0
         threading.Thread(target=self._loop, daemon=True).start()
 
     @property
@@ -79,11 +83,23 @@ class Camera:
     def frames(self) -> int:
         return self._n
 
+    @property
+    def measured_fps(self) -> float:
+        return round(self._measured, 1)
+
+    @property
+    def info(self) -> str:
+        return f"{self.size[0]}×{self.size[1]} · 목표 {self.fps}fps · 품질 {self.quality}"
+
     def _publish(self, jpeg: bytes) -> None:
         with self._lock:
             self._jpeg = jpeg
             self._n += 1
             self._lock.notify_all()
+        t = time.monotonic()                       # 2 초마다 실측 fps 갱신
+        if t - self._t0 >= 2.0:
+            self._measured = (self._n - self._n0) / (t - self._t0)
+            self._t0, self._n0 = t, self._n
 
     def wait(self, last: int, timeout=5.0):
         """last 보다 새 프레임이 나올 때까지 기다린다. (프레임번호, 바이트)"""
@@ -103,7 +119,8 @@ class Camera:
             return
         cmd = [exe, "-t", "0", "--codec", "mjpeg", "--nopreview", "-o", "-",
                "--width", str(self.size[0]), "--height", str(self.size[1]),
-               "--framerate", str(self.fps), "--flush"]
+               "--framerate", str(self.fps), "--quality", str(self.quality), "--flush"]
+        log.info("카메라: %s", " ".join(cmd[-9:]))
         while not self._stop.is_set():
             try:
                 p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
@@ -246,7 +263,11 @@ tr:last-child td{border-bottom:0}
 
 <div class=card><h2>카메라</h2>
   <div class=cam id=cam><div class=msg id=camMsg>불러오는 중…</div></div>
-  <table style="margin-top:12px"><tr><td>상태</td><td id=camState>—</td></tr></table>
+  <table style="margin-top:12px">
+    <tr><td>상태</td><td id=camState>—</td></tr>
+    <tr><td>실측 프레임</td><td id=camFps>—</td></tr>
+    <tr><td>설정</td><td id=camInfo>—</td></tr>
+  </table>
 </div>
 
 <div class=card><h2>전개 구동부</h2>
@@ -299,6 +320,8 @@ function camUp(s){
   else if(!box.querySelector('.msg')){ box.innerHTML='<div class=msg id=camMsg></div>'; }
   const m=box.querySelector('.msg'); if(m) m.textContent=s.camera_error||'영상 없음';
   $('camState').textContent=s.camera_ok?('정상 · '+s.camera_frames+' 프레임'):(s.camera_error||'없음');
+  $('camFps').textContent=s.camera_fps?(s.camera_fps+' fps'):'—';
+  $('camInfo').textContent=s.camera_info||'—';
 }
 async function draw(){let s;
   try{s=await(await fetch('/api/state')).json()}
@@ -348,7 +371,8 @@ class Service:
     def snapshot(self):
         s = self.p.snapshot()
         s.update(camera_ok=self.cam.ok, camera_error=self.cam.error,
-                 camera_frames=self.cam.frames)
+                 camera_frames=self.cam.frames, camera_fps=self.cam.measured_fps,
+                 camera_info=self.cam.info)
         return s
 
     def close(self):
@@ -444,9 +468,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Shepherdron 기체 제어판")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--host", default="0.0.0.0")
-    ap.add_argument("--width", type=int, default=1280)
-    ap.add_argument("--height", type=int, default=720)
-    ap.add_argument("--fps", type=int, default=15)
+    ap.add_argument("--width", type=int, default=960)
+    ap.add_argument("--height", type=int, default=540)
+    ap.add_argument("--fps", type=int, default=20)
+    ap.add_argument("--quality", type=int, default=80, help="JPEG 품질 1~100")
     ap.add_argument("--fc-device", default="/dev/ttyAMA0")
     ap.add_argument("--fc-baud", type=int, default=921600)
     ap.add_argument("--fake", action="store_true",
@@ -471,7 +496,7 @@ def main() -> int:
             log.warning("GPIO 를 못 열어 FAKE 로 대체한다 (%s)", e)
             log.warning("구동부를 쓰려면 sudo apt install python3-gpiozero python3-lgpio")
 
-    cam = Camera(a.width, a.height, a.fps, fake=a.fake)
+    cam = Camera(a.width, a.height, a.fps, a.quality, fake=a.fake)
     if a.no_camera:
         cam.close()
     svc = Service(TapeBoomPayload(backend, cfg), cam)
