@@ -188,8 +188,8 @@ function addLog(text, color) {
  * 영상도 멈춰 버린다. 검출은 되는 대로 돌리고, 화면은 마지막 결과를 쓴다.
  */
 function drawLoop() {
-  const v = $("video");
-  if (S.running && v.readyState >= 2 && v.videoWidth) {
+  const v = FS();
+  if (S.running && fready(v) && fw(v)) {
     const now = performance.now() / 1000;
     if (S.lastT) S.fps = S.fps * 0.85 + (1 / Math.max(1e-3, now - S.lastT)) * 0.15;
     S.lastT = now;
@@ -210,8 +210,8 @@ function drawLoop() {
 
 async function detectLoop() {
   while (S.running) {
-    const v = $("video");
-    if (v.readyState < 2 || !v.videoWidth || !srcCv.width) { await sleep(60); continue; }
+    const v = FS();
+    if (!fready(v) || !fw(v) || !srcCv.width) { await sleep(60); continue; }
     const t0 = performance.now();
     if (detCv.width !== srcCv.width || detCv.height !== srcCv.height) {
       detCv.width = srcCv.width; detCv.height = srcCv.height;
@@ -382,8 +382,20 @@ function autoOrient(vw, vh, phoneAngle) {
   }
 }
 
+/* ── 프레임 소스 ──
+ * 보통은 <video> 다. 기체 카메라는 MJPEG 라 <video> 로 못 받고 <img> 로 받는다.
+ * 둘은 크기와 준비 상태를 묻는 속성 이름이 다르므로 여기서 한 겹 덮는다.
+ * drawImage 는 양쪽을 그대로 받으므로 그리는 쪽은 바꿀 게 없다.
+ */
+function FS() { return S.useImg ? $("mjpeg") : $("video"); }
+function fw(e) { return e.videoWidth || e.naturalWidth || 0; }
+function fh(e) { return e.videoHeight || e.naturalHeight || 0; }
+function fready(e) {
+  return S.useImg ? (e.complete && e.naturalWidth > 0) : e.readyState >= 2;
+}
+
 function uprightFrame(v) {
-  const vw = v.videoWidth, vh = v.videoHeight;
+  const vw = fw(v), vh = fh(v);
   const rot = ((S.rot % 360) + 360) % 360;
   const swap = rot === 90 || rot === 270;
   const w = swap ? vh : vw, h = swap ? vw : vh;
@@ -473,8 +485,8 @@ function drawView(v, W, H, people, roi) {
   const L = V.levelInfo(roi.level);
   ctx.font = `600 ${fs * 0.78}px ${FONT}`;
   ctx.fillStyle = L.color; ctx.fillText(V.levelTag(roi.level), 18, 18 + fs * 1.25);
-  const v0 = $("video");
-  const raw = v0.videoWidth ? `${v0.videoWidth}×${v0.videoHeight}` : "";
+  const v0 = FS();
+  const raw = fw(v0) ? `${fw(v0)}×${fh(v0)}` : "";
   const shown = `${W}×${H}`;
   $("camInfo").textContent =
     (raw && raw !== shown ? `${raw} → ${shown}` : shown)
@@ -749,6 +761,7 @@ $("btnRot").onclick = () => {
 $("btnSource").onclick = () => {
   stopSrc(); S.link?.stop?.(); S.link = null;
   $("video").srcObject = null; $("video").src = "";
+  $("mjpeg").removeAttribute("src"); S.useImg = false;
   S.running = false; S.lastPeople = []; S.view = null; S.dps = 0;
   S.rot = 0; S.phoneRot = null; S.rotManual = false; syncRotBtn();
   showRunControls(false);
@@ -763,6 +776,29 @@ $("btnCopyUrl").onclick = async () => {
   catch (_) { $("btnCopyUrl").textContent = "직접 복사"; }
   setTimeout(() => ($("btnCopyUrl").textContent = "복사"), 1600);
 };
+/* ── 기체 카메라 (MJPEG) ──
+ * 같은 출처에서 받아야 한다. GitHub Pages 는 https 라 브라우저가 http 영상을
+ * 혼합 콘텐츠로 막는다. 그래서 이 버튼은 기체가 직접 서빙하는 페이지에서만 뜬다.
+ */
+function startPiCam() {
+  stopSrc(); S.link?.stop?.(); S.link = null;
+  S.useImg = true;
+  const img = $("mjpeg");
+  img.removeAttribute("src");
+  img.src = `/camera.mjpg?t=${Date.now()}`;   // 캐시된 스트림을 다시 쓰지 않게
+  img.onerror = () => fail("기체 카메라 영상을 받지 못했습니다. " +
+                           "기체에서 panel.py 가 돌고 있는지 확인하세요.");
+  S.srcLabel = "기체 카메라"; S.live = true;
+  $("camName").textContent = "기체 카메라";
+  begin();
+}
+$("btnPi").onclick = startPiCam;
+
+/* 기체가 서빙하는 페이지일 때만 '기체 카메라' 를 보여 준다. */
+fetch("/api/state", { cache: "no-store" })
+  .then((r) => r.ok && ($("btnPi").hidden = false))
+  .catch(() => {});
+
 $("btnFile").onclick = () => $("file").click();
 $("file").onchange = (e) => e.target.files[0] && openFile(e.target.files[0]);
 $("btnDispatch").onclick = () => { S.mission.dispatch(); addLog("수동 출동", T.accent); };

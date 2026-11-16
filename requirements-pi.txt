@@ -12,6 +12,7 @@
 #   YOLO_IMGSZ=320
 #   YOLO_DEVICE=cpu
 
+gpiozero>=2.0             # 전개 구동부 GPIO (apt: python3-gpiozero python3-lgpio)
 ncnn>=1.0.20240410        # NCNN 런타임
 onnx>=1.16.0              # pt -> onnx -> ncnn 변환 경로
 onnxslim>=0.1.31

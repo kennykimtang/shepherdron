@@ -46,7 +46,7 @@ Shepherdron : 군중 밀집도 자율 안내 드론
 이미 확보 : AirGear 355 · F450 프레임 · 랜딩 스키드 · KoA H743 · 4S 2800 mAh ·
 iMax B6 충전기 · RadioMaster Pocket · Raspberry Pi 4
 
-구매 예정 : Camera Module 3 Wide · 5V 3~5A UBEC · USB-TTL 케이블
+구매 예정 : Camera Module 3 Wide · 5V 3~5A UBEC · JST-GH 6핀 → 듀폰 케이블
 
 아래는 **그 외에 없으면 프로젝트가 성립하지 않는 것**입니다.
 
@@ -125,7 +125,7 @@ pytest tests/ -v
 python scripts/stream_camera.py --source csi --width 1280 --height 720
 
 # 기체 (Pi) : 판단·구동 에이전트 (실내)
-python shepherdron_pi.py --fc /dev/ttyUSB0 --ground <노트북-IP> \
+python shepherdron_pi.py --fc /dev/ttyAMA0 --ground <노트북-IP> \
        --indoor --ceiling 4.22 --altitude 2.5
 
 # 지상 (노트북) : YOLO 전담

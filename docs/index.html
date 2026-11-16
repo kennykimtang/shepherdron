@@ -92,7 +92,7 @@ select,#areaIn,#gW,#gH{background:var(--card);border:1px solid var(--edge);color
 #stageHint{position:absolute;left:0;right:0;bottom:16px;text-align:center;
   font-size:13px;color:rgba(255,255,255,.5);display:none;pointer-events:none}
 #stage:fullscreen #stageHint{display:block}
-#video{display:none}
+#video,#mjpeg{display:none}
 .ov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   padding:22px;overflow:auto;background:var(--card)}
 
@@ -269,6 +269,7 @@ select,#areaIn,#gW,#gH{background:var(--card);border:1px solid var(--edge);color
           <span class="r" id="camInfo"></span></div>
         <div id="stage">
           <video id="video" playsinline muted></video>
+          <img id="mjpeg" alt="">
           <canvas id="view"></canvas>
           <div id="calibHint" hidden></div>
 
@@ -283,6 +284,8 @@ select,#areaIn,#gW,#gH{background:var(--card);border:1px solid var(--edge);color
                   <b>이 기기 카메라</b><span>지금 보고 있는 기기로 찍습니다</span></button>
                 <button type="button" id="btnFile">
                   <b>영상 파일</b><span>찍어 둔 영상을 돌려 봅니다</span></button>
+                <button type="button" id="btnPi" hidden>
+                  <b>기체 카메라</b><span>드론에 달린 카메라로 바로 봅니다</span></button>
               </div>
               <input type="file" id="file" accept="video/*" hidden>
               <select id="camSel" hidden></select>

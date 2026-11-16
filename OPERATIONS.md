@@ -16,7 +16,7 @@ Shepherdron 현장 운용 절차
 | 1차 (소프트웨어) | `MavlinkController` 반경·고도 제한, `GuidanceMission` 페일세이프 | **Pi ↔ Pixhawk 링크가 살아 있을 때만** |
 | 2차 (펌웨어) | ArduPilot 지오펜스·배터리·RC 페일세이프 | **항상** |
 
-**Pi가 죽거나 USB-TTL이 빠지면 1차 층은 통째로 사라집니다.** RTL 명령조차 보낼 수 없습니다.
+**Pi가 죽거나 TELEM2 선이 빠지면 1차 층은 통째로 사라집니다.** RTL 명령조차 보낼 수 없습니다.
 그래서 §1의 ArduPilot 파라미터 설정은 **선택이 아니라 필수**입니다.
 
 ---
@@ -113,7 +113,7 @@ RTL_ALT           1500    복귀 고도 15 m (cm 단위). 실내는 250 (2.5 m)
 python scripts/stream_camera.py --source csi --width 1280 --height 720
 
 # ② 기체 (Pi) — 판단·구동 에이전트
-python shepherdron_pi.py --fc /dev/ttyUSB0 --ground <노트북-IP> --altitude 10
+python shepherdron_pi.py --fc /dev/ttyAMA0 --ground <노트북-IP> --altitude 10
 
 # ③ 지상 (노트북)
 python shepherdron_ground.py --source http://<pi-ip>:8000/stream.mjpg --pi <pi-ip> \
