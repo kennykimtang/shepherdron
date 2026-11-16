@@ -2,7 +2,9 @@
  * 판단 로직은 vision.js 에 있고, 그쪽은 노트북 파이썬 코드와 같은 수식을 쓴다.
  */
 import * as V from "./vision.js";
-import { Detector } from "./detector.js";
+import { Detector, modelCached } from "./detector.js";
+import { MjpegSplitter } from "./mjpeg.js";
+import { WorkerDetector } from "./detect-client.js";
 import { hostDisplay, joinAsCamera, cameraUrl, drawQr, readCode } from "./link.js";
 
 const $ = (id) => document.getElementById(id);
@@ -118,7 +120,11 @@ function openFile(f) {
   stopSrc();
   const v = $("video");
   v.srcObject = null; v.src = URL.createObjectURL(f); v.loop = true;
-  v.play();
+  // 아이폰 HEVC(.mov) 처럼 브라우저가 못 푸는 형식이면 조용히 멈추지 않고 알린다.
+  const bad = () => fail(`이 영상은 이 브라우저에서 재생되지 않습니다 (${esc(f.name)}). ` +
+    `아이폰 영상(HEVC)이면 MP4(H.264)로 바꿔서 여세요. 시연은 기체 카메라로 합니다.`);
+  v.onerror = bad;
+  v.play().catch((e) => { if (e?.name !== "AbortError") bad(); });
   S.srcLabel = f.name; S.live = false;
   $("camName").textContent = f.name;
   v.addEventListener("loadedmetadata",
@@ -126,8 +132,19 @@ function openFile(f) {
   begin();
 }
 
+/* <video> 를 비운다. src="" 를 넣으면 브라우저가 페이지 주소를 영상으로 읽으려다
+ * 미디어 오류("aborted due to a corruption problem…")를 낸다. 속성을 지워야 한다. */
+function clearVideo(v = $("video")) {
+  v.onerror = null;
+  v.pause?.();
+  v.srcObject = null;
+  v.removeAttribute("src");
+  v.load();
+}
+
 function stopSrc() {
   if (S.stream) { S.stream.getTracks().forEach((t) => t.stop()); S.stream = null; }
+  stopPi();
 }
 
 /* 무대 위 겹침을 막는다. 한 번에 하나만 뜬다. */
@@ -149,14 +166,43 @@ function showRunControls(on) {
   }
 }
 
+/* 검출기를 만든다. 되도록 워커에서 — 화면 스레드를 비워 두어야 영상이 안 끊긴다.
+ * 워커를 못 띄우는 브라우저면 지금처럼 화면 스레드에서 돈다. */
+async function makeDetector(onP) {
+  if (typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined") {
+    try { return await new WorkerDetector().load(onP); }
+    catch (e) { console.warn("검출 워커 실패 — 화면 스레드로 돌린다", e); }
+  }
+  return await new Detector().load(onP);
+}
+
+/* 모델은 페이지당 한 번만 올린다. 미리 올리던 중이면 그걸 기다린다. */
+function ensureDet(note) {
+  S.detNote = note || null;          // 진행 문구는 지금 보고 있는 쪽으로 보낸다
+  if (!S.detP) {
+    S.detP = makeDetector((t) => S.detNote?.(t))
+      .then((d) => {
+        S.det = d;
+        addLog(`검출 준비 · 머리 검출 ${d.backend}` + (d.worker ? " · 별도 스레드" : " · 화면 스레드")
+               + (d.cached ? " · 저장된 모델" : ""));
+        return d;
+      })
+      .catch((e) => { S.detP = null; throw e; });
+  }
+  return S.detP;
+}
+
 async function begin() {
   if (!S.det) {
-    const note = (t) => stage("msg",
-      `<b>${t}</b><span>인식 모델을 한 번만 내려받습니다. 약 12 MB.</span>`);
-    note("준비 중");
-    try { S.det = await new Detector().load(note); }
+    const cached = await modelCached();
+    const sub = cached
+      ? "저장해 둔 인식 모델을 불러옵니다."
+      : "인식 모델을 처음 한 번만 내려받습니다 (약 11 MB). 다음부터는 바로 뜹니다.";
+    const note = (t) => stage("msg", `<b>${t}</b><span>${sub}</span>`);
+    note(cached ? "모델 불러오는 중" : "준비 중");
+    try { await ensureDet(note); }
     catch (e) { return fail(`인식 모델을 준비하지 못했습니다. ${e.message}`); }
-    addLog(`검출 준비 · 머리 검출 ${S.det.backend}`);
+    finally { S.detNote = null; }
   }
   stage(null);
   showRunControls(true);
@@ -387,11 +433,14 @@ function autoOrient(vw, vh, phoneAngle) {
  * 둘은 크기와 준비 상태를 묻는 속성 이름이 다르므로 여기서 한 겹 덮는다.
  * drawImage 는 양쪽을 그대로 받으므로 그리는 쪽은 바꿀 게 없다.
  */
-function FS() { return S.useImg ? $("mjpeg") : $("video"); }
-function fw(e) { return e.videoWidth || e.naturalWidth || 0; }
-function fh(e) { return e.videoHeight || e.naturalHeight || 0; }
+function FS() { return PI.on ? PI.frame : $("video"); }
+function fw(e) { return e ? (e.videoWidth || e.naturalWidth || e.width || 0) : 0; }
+function fh(e) { return e ? (e.videoHeight || e.naturalHeight || e.height || 0) : 0; }
 function fready(e) {
-  return S.useImg ? (e.complete && e.naturalWidth > 0) : e.readyState >= 2;
+  if (!e) return false;
+  // 기체 영상은 1.5 초 넘게 새 프레임이 없으면 '준비 안 됨' 으로 본다.
+  // 멈춘 화면으로 검출을 계속 돌리면 임무 판단이 옛 장면에 묶인다.
+  return PI.on ? performance.now() - PI.lastAt < 1500 : e.readyState >= 2;
 }
 
 function uprightFrame(v) {
@@ -490,7 +539,10 @@ function drawView(v, W, H, people, roi) {
   const shown = `${W}×${H}`;
   $("camInfo").textContent =
     (raw && raw !== shown ? `${raw} → ${shown}` : shown)
-    + ` · 화면 ${S.fps.toFixed(0)}fps · 검출 ${(S.dps || 0).toFixed(1)}/s`
+    + (PI.on
+      ? ` · 수신 ${PI.fps.toFixed(0)}fps · 버림 ${PI.dropped} · 재접속 ${PI.reconnects}`
+      : ` · 화면 ${S.fps.toFixed(0)}fps`)
+    + ` · 검출 ${(S.dps || 0).toFixed(1)}/s`
     + (S.det ? ` · ${S.det.backend}` : "");
 }
 
@@ -723,7 +775,7 @@ function startPhoneLink() {
     },
     async onStream(stream) {
       const v = $("video");
-      v.srcObject = stream; v.src = ""; v.loop = false;
+      v.removeAttribute("src"); v.srcObject = stream; v.loop = false;
       await v.play().catch(() => {});
       S.srcLabel = "폰 카메라"; S.live = true;
       $("camName").textContent = "폰 카메라";
@@ -760,8 +812,7 @@ $("btnRot").onclick = () => {
 
 $("btnSource").onclick = () => {
   stopSrc(); S.link?.stop?.(); S.link = null;
-  $("video").srcObject = null; $("video").src = "";
-  $("mjpeg").removeAttribute("src"); S.useImg = false;
+  clearVideo();
   S.running = false; S.lastPeople = []; S.view = null; S.dps = 0;
   S.rot = 0; S.phoneRot = null; S.rotManual = false; syncRotBtn();
   showRunControls(false);
@@ -777,27 +828,118 @@ $("btnCopyUrl").onclick = async () => {
   setTimeout(() => ($("btnCopyUrl").textContent = "복사"), 1600);
 };
 /* ── 기체 카메라 (MJPEG) ──
- * 같은 출처에서 받아야 한다. GitHub Pages 는 https 라 브라우저가 http 영상을
- * 혼합 콘텐츠로 막는다. 그래서 이 버튼은 기체가 직접 서빙하는 페이지에서만 뜬다.
+ * 이 프로젝트의 영상 소스는 기체 카메라 하나다.
+ *
+ * 기체가 서빙한 페이지(http://actuator.local:8080)에서만 직접 받는다. GitHub
+ * Pages 는 https 라 브라우저가 http 영상을 혼합 콘텐츠로 막는다. 그래서 Pages
+ * 에서 이 버튼을 누르면 기체 주소로 넘어간다. 주소 이동은 막히지 않는다.
+ *
+ * <img src=mjpg> 를 쓰지 않는 이유
+ *   브라우저가 받은 프레임을 전부 디코딩하고, 멈춰도 알려 주지 않는다.
+ *   스트림을 직접 읽으면 밀릴 때 옛 프레임을 버리고 최신 한 장만 디코딩하며,
+ *   끊기면 다시 붙고, 실제 수신 fps 를 잴 수 있다.
  */
-function startPiCam() {
+const PI_HOST = new URLSearchParams(location.search).get("pi") || "actuator.local:8080";
+const PI = { on: false, gen: 0, ctl: null, frame: null, lastAt: 0, connAt: 0, stale: false,
+             got: 0, dropped: 0, reconnects: 0, fps: 0, t0: 0, n0: 0 };
+
+/* 기체가 서빙한 페이지인가. GitHub Pages 의 404 는 HTML 이라 여기서 걸러진다. */
+const piServed = fetch("/api/state", { cache: "no-store" })
+  .then((r) => r.ok && (r.headers.get("content-type") || "").includes("json"))
+  .catch(() => false);
+
+function piShow(bmp, gen) {
+  if (gen !== PI.gen) { bmp.close(); return; }
+  const old = PI.frame; PI.frame = bmp; old?.close?.();   // GPU 메모리를 바로 돌려준다
+  const t = performance.now();
+  PI.lastAt = t; PI.got++;
+  if (!PI.t0) { PI.t0 = t; PI.n0 = PI.got; }
+  else if (t - PI.t0 >= 1000) {
+    PI.fps = ((PI.got - PI.n0) * 1000) / (t - PI.t0);
+    PI.t0 = t; PI.n0 = PI.got;
+  }
+}
+
+async function piStream(gen) {
+  // 디코딩은 한 번에 하나. 그동안 온 프레임은 최신 한 장만 남긴다.
+  let busy = false, next = null;
+  const decode = async (jpeg) => {
+    busy = true;
+    while (jpeg) {
+      try { piShow(await createImageBitmap(new Blob([jpeg], { type: "image/jpeg" })), gen); }
+      catch (_) { PI.dropped++; }
+      jpeg = next; next = null;
+    }
+    busy = false;
+  };
+  const offer = (jpeg) => {
+    if (!busy) { decode(jpeg); return; }
+    if (next) PI.dropped++;
+    next = jpeg;
+  };
+
+  while (PI.on && gen === PI.gen) {
+    const ctl = new AbortController();
+    PI.ctl = ctl; PI.connAt = performance.now();  // lastAt(마지막 프레임)은 건드리지 않는다
+    try {
+      const res = await fetch(`/camera.mjpg?t=${Date.now()}`,
+                              { cache: "no-store", signal: ctl.signal });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const rd = res.body.getReader();
+      const sp = new MjpegSplitter();
+      while (PI.on && gen === PI.gen) {
+        const { done, value } = await rd.read();
+        if (done) break;
+        const { frame, skipped } = sp.push(value);
+        if (frame) { PI.dropped += skipped; offer(frame); }
+      }
+    } catch (_) { /* 끊김 · 감시자가 끊음 — 아래에서 다시 붙는다 */ }
+    if (!PI.on || gen !== PI.gen) return;
+    PI.reconnects++;
+    await sleep(700);
+  }
+}
+
+/* 감시자 : 3 초간 새 프레임이 없으면 연결을 끊고 다시 붙는다.
+ * 1.5 초부터는 화면에 끊겼다고 알린다. 멈춘 화면을 정상처럼 보이면 안 된다. */
+setInterval(() => {
+  if (!PI.on) return;
+  const now = performance.now();
+  const idle = now - PI.lastAt;                     // 마지막 프레임 이후
+  if (now - Math.max(PI.lastAt, PI.connAt) > 3000 && PI.ctl) PI.ctl.abort();
+  const stale = S.running && idle > 1500;
+  if (stale && !PI.stale) {
+    PI.stale = true;
+    stage("msg", `<b>기체 영상이 끊겼습니다</b>` +
+      `<span>다시 붙는 중입니다. 기체 전원과 Wi-Fi(같은 핫스팟)를 확인하세요.</span>`);
+  } else if (!stale && PI.stale) {
+    PI.stale = false;
+    stage(null);
+    addLog(`기체 영상 복구 · 재접속 ${PI.reconnects}회`);
+  }
+}, 500);
+
+function stopPi() {
+  if (!PI.on && !PI.frame) return;
+  PI.on = false; PI.gen++; PI.stale = false;
+  PI.ctl?.abort(); PI.ctl = null;
+  PI.frame?.close?.(); PI.frame = null;
+}
+
+async function startPiCam() {
+  if (!(await piServed)) {                  // Pages 등에서는 기체 주소로 보낸다
+    location.href = `http://${PI_HOST}/`;
+    return;
+  }
   stopSrc(); S.link?.stop?.(); S.link = null;
-  S.useImg = true;
-  const img = $("mjpeg");
-  img.removeAttribute("src");
-  img.src = `/camera.mjpg?t=${Date.now()}`;   // 캐시된 스트림을 다시 쓰지 않게
-  img.onerror = () => fail("기체 카메라 영상을 받지 못했습니다. " +
-                           "기체에서 panel.py 가 돌고 있는지 확인하세요.");
+  Object.assign(PI, { on: true, gen: PI.gen + 1, frame: null, lastAt: performance.now(), connAt: 0,
+                      got: 0, dropped: 0, reconnects: 0, fps: 0, t0: 0, n0: 0 });
+  piStream(PI.gen);
   S.srcLabel = "기체 카메라"; S.live = true;
   $("camName").textContent = "기체 카메라";
   begin();
 }
 $("btnPi").onclick = startPiCam;
-
-/* 기체가 서빙하는 페이지일 때만 '기체 카메라' 를 보여 준다. */
-fetch("/api/state", { cache: "no-store" })
-  .then((r) => r.ok && ($("btnPi").hidden = false))
-  .catch(() => {});
 
 $("btnFile").onclick = () => $("file").click();
 $("file").onchange = (e) => e.target.files[0] && openFile(e.target.files[0]);
@@ -919,3 +1061,20 @@ async function runCameraMode(code) {
 const camCode = readCode();
 if (camCode) runCameraMode(camCode);
 else listCams();
+
+/* 링크를 열면 바로 기체 영상이 뜨게 한다.
+ * 기체가 서빙한 페이지면 소스 고르는 화면 없이 시작한다. 폰·이 기기 카메라는
+ * http 에서 어차피 열리지 않으므로 숨긴다. 영상 파일은 리허설용으로 남긴다. */
+if (!camCode) {
+  piServed.then((ok) => {
+    if (ok) {
+      $("btnPhone").hidden = true; $("btnStart").hidden = true;
+      if (!S.running) startPiCam();
+    } else {
+      $("btnPi").querySelector("span").textContent =
+        `같은 Wi-Fi 에서 기체 페이지(${PI_HOST})로 엽니다`;
+      // 모델이 저장돼 있으면 미리 올려 둔다. 처음 방문이면 고를 때까지 받지 않는다.
+      modelCached().then((c) => c && ensureDet().catch(() => {}));
+    }
+  });
+}

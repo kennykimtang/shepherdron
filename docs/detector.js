@@ -38,6 +38,78 @@
  * 'webgpu' 를 넣으면 조용히 WASM 으로 떨어져 단일 스레드로 돈다(초당 1~3장).
  * index.html 에서 ort.all.min.js 를 싣는 이유다. */
 const ORT_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+
+/* ── 모델 저장 ──
+ * 11 MB 를 접속할 때마다 받지 않으려고 브라우저에 저장해 둔다.
+ *
+ * Cache Storage 가 아니라 IndexedDB 인 이유
+ *   기체가 서빙하는 페이지는 http:// 다. Cache Storage 는 https 와 localhost
+ *   에서만 열리고, IndexedDB 는 http 에서도 열린다. 두 배포 모두 같은 코드로 된다.
+ *
+ * MODEL_REV 는 docs/head.onnx 의 sha256 앞 12자리다. 모델을 바꾸면 이 값도
+ * 바꿔야 브라우저가 새 모델을 받는다. 잊지 않게 테스트가 확인한다
+ * (tests/test_web_assets.py).
+ */
+export const MODEL_REV = "7f954b6e828f";
+const DB_NAME = "shepherdron", DB_STORE = "models";
+
+function idb() {
+  return new Promise((ok, no) => {
+    if (typeof indexedDB === "undefined") return no(new Error("no indexedDB"));
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(DB_STORE);
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => no(r.error);
+  });
+}
+function keyOf(url) { return `${String(url).split("/").pop()}@${MODEL_REV}`; }
+
+async function idbGet(key) {
+  try {
+    const db = await idb();
+    return await new Promise((ok) => {
+      const q = db.transaction(DB_STORE).objectStore(DB_STORE).get(key);
+      q.onsuccess = () => ok(q.result || null);
+      q.onerror = () => ok(null);
+    });
+  } catch (_) { return null; }       // 사생활 보호 창 등: 저장 없이 매번 받는다
+}
+
+async function idbPut(key, buf) {
+  try {
+    const db = await idb();
+    await new Promise((ok) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      const st = tx.objectStore(DB_STORE);
+      const name = key.split("@")[0];
+      const ks = st.getAllKeys();       // 같은 모델의 옛 판은 지운다
+      ks.onsuccess = () => {
+        for (const k of ks.result) if (String(k).startsWith(name + "@") && k !== key) st.delete(k);
+        st.put(buf, key);
+      };
+      tx.oncomplete = ok; tx.onerror = ok; tx.onabort = ok;
+    });
+    // 저장 공간이 모자랄 때 브라우저가 지우지 않게 부탁한다. 거절돼도 상관없다.
+    navigator.storage?.persist?.().catch(() => {});
+  } catch (_) { /* 저장 실패는 다음에 다시 받을 뿐이다 */ }
+}
+
+async function idbDel(key) {
+  try {
+    const db = await idb();
+    await new Promise((ok) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      tx.objectStore(DB_STORE).delete(key);
+      tx.oncomplete = ok; tx.onerror = ok; tx.onabort = ok;
+    });
+  } catch (_) { /* 무시 */ }
+}
+
+/** 저장된 모델이 있는가. 안내 문구를 고르는 데 쓴다. */
+export async function modelCached(url = "./head.onnx") {
+  const b = await idbGet(keyOf(url));
+  return !!(b && b.byteLength > 1e6);
+}
 export const INPUT = 640;
 export const HEAD_CLASS = 1;
 const OVERLAP = 0.2;            // 조각이 중심 구역 밖으로 더 보는 비율
@@ -48,21 +120,32 @@ export class Detector {
     this.session = null;
     this.backend = "—";
     this.out = null;
-    this.cv = document.createElement("canvas");
+    // 워커에는 document 가 없다. 거기서는 OffscreenCanvas 로 같은 일을 한다.
+    this.cv = typeof document !== "undefined"
+      ? document.createElement("canvas") : new OffscreenCanvas(INPUT, INPUT);
     this.cv.width = INPUT; this.cv.height = INPUT;
     this.ctx = this.cv.getContext("2d", { willReadFrequently: true });
     this.input = new Float32Array(3 * INPUT * INPUT);
   }
 
-  async load(onProgress) {
+  async load(onProgress, _retried = false) {
     const ort = self.ort;
     ort.env.wasm.wasmPaths = ORT_BASE;
     // GitHub Pages 는 COOP/COEP 헤더를 주지 않으므로 스레드를 못 쓴다. SIMD 는 된다.
     ort.env.wasm.numThreads = 1;
     ort.env.wasm.simd = true;
 
-    onProgress?.("모델 내려받는 중");
-    const buf = await fetchWithProgress(this.modelUrl, onProgress);
+    const key = keyOf(this.modelUrl);
+    let buf = await idbGet(key);
+    if (buf && buf.byteLength > 1e6) {
+      this.cached = true;
+      onProgress?.("저장된 모델 불러오는 중");
+    } else {
+      this.cached = false;
+      onProgress?.("모델 내려받는 중");
+      buf = await fetchWithProgress(this.modelUrl, onProgress);
+      idbPut(key, buf.slice(0));        // 기다리지 않는다. 복사본을 넘긴다
+    }
 
     const avail = typeof navigator !== "undefined" && navigator.gpu
       ? ["webgpu", "wasm"] : ["wasm"];
@@ -85,6 +168,11 @@ export class Detector {
           ? split : { single: names[0] };
         return this;
       } catch (e) { last = e; }
+    }
+    // 저장본이 깨졌을 수 있다. 지우고 한 번만 새로 받아 본다.
+    if (this.cached && !_retried) {
+      await idbDel(key);
+      return this.load(onProgress, true);
     }
     throw new Error(last?.message || "추론 엔진을 초기화하지 못했습니다");
   }

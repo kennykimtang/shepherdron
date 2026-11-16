@@ -102,21 +102,64 @@ RTL_ALT           1500    복귀 고도 15 m (cm 단위). 실내는 250 (2.5 m)
 
 1. **기체 조립** : [WIRING.md](WIRING.md) §7 조립 순서를 따릅니다.
 2. **카메라 각도** : 45° 하향 고정 확인. 수직이면 사람이 6.5 px 라 검출이 안 됩니다.
-3. **Wi-Fi 연결** : 노트북에서 Pi 에 ping 이 가는지 확인.
+3. **Wi-Fi 연결** : 노트북과 기체를 같은 핫스팟(`KING`)에. `ping actuator.local` 이 가는지 확인.
 4. **배터리 연결** : 프로펠러는 아직 끼우지 않습니다.
 5. **Pixhawk 부팅 확인** : GPS 3D fix, 위성 12개 이상.
+
+기체 카메라 · 웹 화면
+
+**영상 소스는 기체 카메라 하나입니다.** 기체가 비전 화면을 직접 서빙합니다.
+
+| 주소 | 내용 |
+|---|---|
+| **http://actuator.local:8080** | 비전 화면. 열면 **바로 기체 카메라로 시작**합니다 |
+| http://actuator.local:8080/panel | 카메라 상태 · 전개 구동부 · FC 링크 점검 |
+| https://kennykimtang.github.io/shepherdron/ | 발표·공유용. 「기체 카메라」를 누르면 위 주소로 넘어갑니다 |
+
+- 노트북과 기체가 **같은 핫스팟**(`KING`)에 있어야 합니다. 학교 Wi-Fi 는 기기끼리 통신을 막습니다.
+- GitHub Pages 주소에서 영상을 직접 못 받는 건 브라우저 규칙입니다(https 페이지는 http 영상을
+  혼합 콘텐츠로 막음). 그래서 기체 주소로 넘깁니다.
+- 인식 모델(11 MB)은 **처음 한 번만** 받고 브라우저에 저장합니다. 다음부터는 1초 안에 뜹니다.
+
+화면 오른쪽 위 카메라 정보에서 상태를 봅니다.
+
+```
+960×540 · 수신 18fps · 버림 0 · 재접속 0 · 검출 3.9/s · CPU
+```
+
+| 항목 | 정상 | 이상하면 |
+|---|---|---|
+| 수신 fps | 15 이상 | Wi-Fi 가 막힘. 핫스팟을 가까이, 또는 `--quality 70` |
+| 버림 | 0 근처에서 거의 안 늘어남 | 노트북이 버거움. 다른 탭을 닫는다 |
+| 재접속 | 0 | 늘어나면 기체 전원·Wi-Fi 를 본다 |
+
+영상이 1.5초 넘게 안 오면 화면에 **"기체 영상이 끊겼습니다"** 가 뜨고 검출이 멈춥니다.
+멈춘 장면으로 판단을 계속하지 않기 위해서입니다. 영상이 돌아오면 스스로 다시 붙습니다.
+
+검출은 화면과 다른 스레드(Web Worker)에서 돕니다. 그래서 검출이 느려도 영상은 카메라
+속도로 그려집니다.
+
+**제어판은 부팅할 때 자동으로 뜹니다.** 한 번만 등록합니다.
+
+```bash
+bash scripts/install_panel_service.sh
+```
+
+> 주의 **카메라는 한 프로세스만 열 수 있습니다.** 제어판 서비스가 돌고 있으면
+> `scripts/stream_camera.py` 는 카메라를 못 엽니다. 지상 파이썬도 제어판 스트림을 받습니다.
 
 소프트웨어 기동 순서
 
 ```bash
-# ① 기체 (Pi) — 카메라 스트리밍
-python scripts/stream_camera.py --source csi --width 1280 --height 720
+# ① 기체 (Pi) — 제어판 (카메라 스트리밍 포함). 서비스로 등록했으면 이미 떠 있다
+systemctl status shepherdron-panel --no-pager | head -3
 
 # ② 기체 (Pi) — 판단·구동 에이전트
+#    제어판의 'FC 링크 점검' 은 /dev/ttyAMA0 을 잠깐 연다. 에이전트가 도는 동안 누르지 않는다
 python shepherdron_pi.py --fc /dev/ttyAMA0 --ground <노트북-IP> --altitude 10
 
-# ③ 지상 (노트북)
-python shepherdron_ground.py --source http://<pi-ip>:8000/stream.mjpg --pi <pi-ip> \
+# ③ 지상 (노트북) — 제어판이 내보내는 영상을 받는다
+python shepherdron_ground.py --source http://actuator.local:8080/camera.mjpg --pi actuator.local \
        --calibration calibration/ground_plane.json
 ```
 
