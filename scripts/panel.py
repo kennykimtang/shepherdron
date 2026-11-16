@@ -28,10 +28,12 @@ import json
 import logging
 import pathlib
 import shutil
+import socket
 import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -42,10 +44,36 @@ from hardware.payload_tape import TapeBoomConfig, TapeBoomPayload  # noqa: E402
 log = logging.getLogger("shepherdron.panel")
 SOI, EOI = b"\xff\xd8", b"\xff\xd9"
 DOCS = pathlib.Path(__file__).resolve().parent.parent / "docs"
+SNDBUF = 128 * 1024     # 영상 연결의 커널 송신 버퍼 상한 (아래 _mjpeg 참고)
+
+
+def split_jpegs(buf: bytes) -> tuple[list[bytes], bytes]:
+    """MJPEG 바이트열에서 완성된 JPEG 를 떼어 낸다. (완성된 것들, 남은 조각)
+
+    남은 조각은 다음 읽기와 이어 붙인다. 표지(FF D8)가 두 읽기에 걸쳐 잘릴 수
+    있으므로, 표지를 못 찾았을 때도 마지막 한 바이트는 버리지 않는다.
+    """
+    out: list[bytes] = []
+    while True:
+        s = buf.find(SOI)
+        if s < 0:
+            return out, buf[-1:]
+        e = buf.find(EOI, s + 2)
+        if e < 0:
+            return out, buf[s:]
+        out.append(buf[s:e + 2])
+        buf = buf[e + 2:]
 MIME = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8",
         ".onnx": "application/octet-stream", ".png": "image/png", ".jpg": "image/jpeg",
         ".svg": "image/svg+xml", ".ico": "image/x-icon", ".md": "text/plain; charset=utf-8"}
+
+
+def _drain(stream, tail: deque) -> None:
+    for raw in iter(stream.readline, b""):
+        line = raw.decode(errors="replace").strip()
+        if line:
+            tail.append(line)
 
 
 # ───────────────────────── 카메라 ─────────────────────────
@@ -129,29 +157,26 @@ class Camera:
                 self._err = f"카메라 실행 실패: {e}"
                 log.error(self._err)
                 return
+            # stderr 는 따로 계속 비운다. 파이프(64 KB)가 로그로 차면 rpicam-vid 가
+            # 쓰기에서 막히고, 그러면 영상이 통째로 멈춘다. 마지막 몇 줄만 남긴다.
+            tail: deque[str] = deque(maxlen=20)
+            threading.Thread(target=_drain, args=(p.stderr, tail), daemon=True).start()
             buf = b""
             while not self._stop.is_set():
                 chunk = p.stdout.read(8192)
                 if not chunk:
                     break
-                buf += chunk
-                while True:                       # 한 번에 여러 장이 올 수 있다
-                    s = buf.find(SOI)
-                    if s < 0:
-                        buf = b""
-                        break
-                    e = buf.find(EOI, s + 2)
-                    if e < 0:
-                        buf = buf[s:]
-                        break
-                    self._publish(buf[s:e + 2])
+                frames, buf = split_jpegs(buf + chunk)
+                for f in frames:                  # 한 번에 여러 장이 올 수 있다
+                    self._publish(f)
+                if frames:
                     self._err = ""
-                    buf = buf[e + 2:]
-            err = (p.stderr.read() or b"").decode(errors="replace").strip()
             p.kill()
+            p.wait(timeout=3)
+            err = tail[-1] if tail else ""
             if self._stop.is_set():
                 return
-            self._err = err.splitlines()[-1] if err else "카메라가 멈췄다 — 재시작"
+            self._err = err or "카메라가 멈췄다 — 재시작"
             log.warning("카메라 재시작: %s", self._err)
             time.sleep(2)
 
@@ -436,6 +461,15 @@ def make_handler(svc, fc_device, fc_baud):
             self.send_header("Content-Type",
                              "multipart/x-mixed-replace; boundary=FRAME")
             self.end_headers()
+            # 지연이 쌓이지 않게 한다.
+            # 앱은 최신 프레임만 보내지만, 커널 송신 버퍼는 Wi-Fi 가 느리면 수 MB 까지
+            # 자라서 프레임 수십 장을 쌓아 둔다. 그 지연은 앱에서 버릴 수 없다.
+            # 상한을 두면 밀릴 때 쓰기가 막히고, 그동안 나온 프레임은 건너뛴다.
+            try:
+                self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, SNDBUF)
+                self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            except OSError:
+                pass
             last = 0
             try:
                 while True:
